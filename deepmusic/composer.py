@@ -42,14 +42,15 @@ class Composer:
     class TestMode:
         """ Simple structure representing the different testing modes
         """
-        STANDARD = 'standard'  # The network try to generate a new original composition
+        ALL = 'all'  # The network try to generate a new original composition with all models present (with the tag)
+        DAEMON = 'daemon'  # Runs on background and can regularly be called to predict something (Not implemented)
 
         @staticmethod
         def get_test_modes() -> List[str]:
             """ Return the list of the different testing modes
             Useful on when parsing the command lines arguments
             """
-            return [TestMode.STANDARD]
+            return [Composer.TestMode.ALL, Composer.TestMode.DAEMON]
 
     def __init__(self):
         """
@@ -71,8 +72,6 @@ class Composer:
         self.sess = None
 
         # Filename and directories constants
-        self.DATA_DIR_MIDI = 'data/midi'  # Originals midi files
-        self.DATA_DIR_SAMPLES = 'data/samples'  # Training/testing samples after preprocessing
         self.MODEL_DIR_BASE = 'save/model'
         self.MODEL_NAME_BASE = 'model'
         self.MODEL_EXT = '.ckpt'
@@ -91,28 +90,27 @@ class Composer:
 
         # Global options
         global_args = parser.add_argument_group('Global options')
-        global_args.add_argument('--test', nargs='?', choices=Composer.TestMode.get_test_modes(), const=Composer.TestMode.STANDARD, default=None,
+        global_args.add_argument('--test', nargs='?', choices=Composer.TestMode.get_test_modes(), const=Composer.TestMode.ALL, default=None,
                                  help='if present, launch the program try to answer all sentences from data/test/ with'
                                       ' the defined model(s), in interactive mode, the user can wrote his own sentences,'
                                       ' use daemon mode to integrate the chatbot in another program')
-        global_args.add_argument('--create_dataset', action='store_true', help='if present, the program will only generate the dataset from the corpus (no training/testing)')
-        global_args.add_argument('--play_dataset', type=int, nargs='?', const=10, default=None,  help='if set, the program  will randomly play some samples(can be use conjointly with createDataset if this is the only action you want to perform)')  # TODO: Play midi ? / Or show sample images ? Both ?
         global_args.add_argument('--reset', action='store_true', help='use this if you want to ignore the previous model present on the model directory (Warning: the model will be destroyed with all the folder content)')
-        global_args.add_argument('--keep_all', action='store_true', help='If this option is set, all saved model will be keep (Warning: make sure you have enough free disk space or increase saveEvery)')  # TODO: Add an option to delimit the max size
+        global_args.add_argument('--keep_all', action='store_true', help='If this option is set, all saved model will be keep (Warning: make sure you have enough free disk space or increase save_every)')  # TODO: Add an option to delimit the max size
         global_args.add_argument('--model_tag', type=str, default=None, help='tag to differentiate which model to store/load')
         global_args.add_argument('--root_dir', type=str, default=None, help='folder where to look for the models and data')
         global_args.add_argument('--device', type=str, default=None, help='\'gpu\' or \'cpu\' (Warning: make sure you have enough free RAM), allow to choose on which hardware run the model')
-        global_args.add_argument('--seed', type=int, default=None, help='random seed for replication')
 
         # Dataset options
         dataset_args = parser.add_argument_group('Dataset options')
-        dataset_args.add_argument('--dataset_tag', type=str, default=None, help='add a tag to the dataset (file where to load the vocabulary and the precomputed samples, not the original corpus). Useful to manage multiple versions')  # The samples are computed from the corpus if it does not exist already. There are saved in \'data/samples/\'
+        dataset_args.add_argument('--dataset_tag', type=str, default='joplin', help='tag to differentiate which data use (if the data are not present, the program will try to generate from the midi folder)')
+        dataset_args.add_argument('--create_dataset', action='store_true', help='if present, the program will only generate the dataset from the corpus (no training/testing)')
+        dataset_args.add_argument('--play_dataset', type=int, nargs='?', const=10, default=None,  help='if set, the program  will randomly play some samples(can be use conjointly with create_dataset if this is the only action you want to perform)')  # TODO: Play midi ? / Or show sample images ? Both ?
         dataset_args.add_argument('--ratio_dataset', type=float, default=1.0, help='ratio of dataset to separate training/testing')  # Not implemented, here maybe useless because we would like to overfit
 
-        # Network options (Warning: if modifying something here, also make the change on save/loadParams() )
+        # Network options (Warning: if modifying something here, also make the change on save/restore_params() )
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
 
-        # Training options (Warning: if modifying something here, also make the change on save/loadParams() )
+        # Training options (Warning: if modifying something here, also make the change on save/restore_params() )
         training_args = parser.add_argument_group('Training options')
         training_args.add_argument('--num_epochs', type=int, default=30, help='maximum number of epochs to run')
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
@@ -136,7 +134,8 @@ class Composer:
         self.args = self._parse_args(args)
         if not self.args.root_dir:
             self.args.root_dir = os.getcwd()  # Use the current working directory
-        self._restore_params()  # Update the self.model_dir and self.glob_step, for now, not used when loading Model (but need to be called before _getSummaryName)
+
+        self._restore_params()  # Update the self.model_dir and self.glob_step, for now, not used when loading Model
 
         self.music_data = MusicData(self.args)
         if self.args.create_dataset:
@@ -144,14 +143,14 @@ class Composer:
             return  # No need to go further
 
         with tf.device(self._get_device()):
-            self.model = Model(self.args, self.music_data)
+            self.model = Model(self.args)
 
         # Saver/summaries
         self.writer = tf.train.SummaryWriter(self.model_dir)
         self.saver = tf.train.Saver(max_to_keep=200)  # Arbitrary limit ?
 
         # TODO: Fixed seed (WARNING: If dataset shuffling, make sure to do that after saving the
-        # dataset, otherwise, all which cames after the shuffling won't be replicable when
+        # dataset, otherwise, all what comes after the shuffling won't be replicable when
         # reloading the dataset). How to restore the seed after loading ??
         # Also fix seed for random.shuffle (does it works globally for all files ?)
 
@@ -162,71 +161,60 @@ class Composer:
         print('Initialize variables...')
         self.sess.run(tf.initialize_all_variables())
 
-        # Reload the model eventually (if it exist.), on testing mode, the models are not loaded here (but in predictTestset)
-        if self.args.test != Chatbot.TestMode.ALL:
-            self.managePreviousModel(self.sess)
+        # Reload the model eventually (if it exist), on testing mode, the models are not loaded here (but in main_test())
+        self._restore_previous_model(self.sess)
 
         if self.args.test:
-            # TODO: For testing, add a mode where instead taking the most likely output after the <go> token,
-            # takes the second or third so it generates new sentences for the same input. Difficult to implement,
-            # probably have to modify the TensorFlow source code
-            if self.args.test == Chatbot.TestMode.INTERACTIVE:
-                self.mainTestInteractive(self.sess)
-            elif self.args.test == Chatbot.TestMode.ALL:
-                print('Start predicting...')
-                self.predictTestset(self.sess)
-                print('All predictions done')
-            elif self.args.test == Chatbot.TestMode.DAEMON:
+            if self.args.test == Composer.TestMode.ALL:
+                self._main_test()
+            elif self.args.test == Composer.TestMode.DAEMON:
                 print('Daemon mode, running in background...')
+                raise NotImplementedError('No daemon mode')  # Come back later
             else:
                 raise RuntimeError('Unknown test mode: {}'.format(self.args.test))  # Should never happen
         else:
-            self.mainTrain(self.sess)
+            self._main_train()
 
-        if self.args.test != Chatbot.TestMode.DAEMON:
+        if self.args.test != Composer.TestMode.DAEMON:
             self.sess.close()
             print("The End! Thanks for using this program")
 
-    def mainTrain(self, sess):
+    def _main_train(self):
         """ Training loop
-        Args:
-            sess: The current running session
         """
+        assert self.sess
 
-        # Specific training dependent loading
+        # Specific training dependent loading (Warning: When restoring a model, we don't restore the progression
+        # bar, nor the current batch.)
 
-        self.textData.makeLighter(self.args.ratioDataset)  # Limit the number of training samples
-
-        mergedSummaries = tf.merge_all_summaries()  # Define the summary operator (Warning: Won't appear on the tensorboard graph)
-        if self.globStep == 0:  # Not restoring from previous run
-            self.writer.add_graph(sess.graph)  # First time only
-
-        # If restoring a model, restore the progression bar ? and current batch ?
+        merged_summaries = tf.merge_all_summaries()
+        if self.glob_step == 0:  # Not restoring from previous run
+            self.writer.add_graph(self.sess.graph)  # First time only
 
         print('Start training (press Ctrl+C to save and exit)...')
 
         try:  # If the user exit while training, we still try to save the model
-            for e in range(self.args.numEpochs):
+            for e in range(self.args.num_epochs):
 
-                print("--- Epoch {}/{} ; (lr={})".format(e+1, self.args.numEpochs, self.args.learningRate))
                 print()
+                print("------- Epoch {}/{} (lr={}) -------".format(e+1, self.args.num_epochs, self.args.learning_rate))
 
-                batches = self.textData.getBatches()
+                batches = self.music_data.get_batches()
 
-                # TODO: Also update learning parameters eventually
+                # Also update learning parameters eventually ??
 
                 tic = datetime.datetime.now()
-                for nextBatch in tqdm(batches, desc="Training"):
+                for next_batch in tqdm(batches, desc="Training"):
                     # Training pass
-                    ops, feedDict = self.model.step(nextBatch)
-                    assert len(ops) == 2  # training, loss
-                    _, loss, summary = sess.run(ops + (mergedSummaries,), feedDict)
-                    self.writer.add_summary(summary, self.globStep)
-                    self.globStep += 1
+                    ops, feed_dict = self.model.step(next_batch)
+                    assert len(ops) == 1  # training
+                    summary, _ = self.sess.run((merged_summaries,) + ops, feed_dict)
+                    self.writer.add_summary(summary, self.glob_step)
+                    self.glob_step += 1
 
                     # Checkpoint
-                    if self.globStep % self.args.saveEvery == 0:
-                        self._saveSession(sess)
+                    if self.glob_step % self.args.save_every == 0:
+                        self._save_session(self.sess)
 
                 toc = datetime.datetime.now()
 
@@ -234,106 +222,34 @@ class Composer:
         except (KeyboardInterrupt, SystemExit):  # If the user press Ctrl+C while testing progress
             print('Interruption detected, exiting the program...')
 
-        self._saveSession(sess)  # Ultimate saving before complete exit
+        self._save_session(self.sess)  # Ultimate saving before complete exit
 
-    def predictTestset(self, sess):
-        """ Try predicting the sentences from the samples.txt file.
-        The sentences are saved on the model_dir under the same name
-        Args:
-            sess: The current running session
+    def _main_test(self):
+        """ Generate some songs
         """
+        assert self.sess
 
-        # Loading the file to predict
-        with open(os.path.join(self.args.rootDir, self.TEST_IN_NAME), 'r') as f:
-            lines = f.readlines()
+        print('Start predicting...')
+        pass
 
-        modelList = self._getModelList()
-        if not modelList:
-            print('Warning: No model found in \'{}\'. Please train a model before trying to predict'.format(self.model_dir))
-            return
-
-        # Predicting for each model present in model_dir
-        for modelName in sorted(modelList):  # TODO: Natural sorting
-            print('Restoring previous model from {}'.format(modelName))
-            self.saver.restore(sess, modelName)
-            print('Testing...')
-
-            saveName = modelName[:-len(self.MODEL_EXT)] + self.TEST_OUT_SUFFIX  # We remove the model extension and add the prediction suffix
-            with open(saveName, 'w') as f:
-                nbIgnored = 0
-                for line in tqdm(lines, desc='Sentences'):
-                    question = line[:-1]  # Remove the endl character
-
-                    answer = self.singlePredict(question)
-                    if not answer:
-                        nbIgnored += 1
-                        continue  # Back to the beginning, try again
-
-                    predString = '{x[0]}{0}\n{x[1]}{1}\n\n'.format(question, self.textData.sequence2str(answer, clean=True), x=self.SENTENCES_PREFIX)
-                    if self.args.verbose:
-                        tqdm.write(predString)
-                    f.write(predString)
-                print('Prediction finished, {}/{} sentences ignored (too long)'.format(nbIgnored, len(lines)))
-
-    def mainTestInteractive(self, sess):
-        """ Try predicting the sentences that the user will enter in the console
-        Args:
-            sess: The current running session
-        """
-        # TODO: If verbose mode, also show similar sentences from the training set with the same words (include in mainTest also)
-        # TODO: Also show the top 10 most likely predictions for each predicted output (when verbose mode)
-
-        print('Testing: Launch interactive mode:')
-        print('')
-        print('Welcome to the interactive mode, here you can ask to Deep Q&A the sentence you want. Don\'t have high '
-              'expectation. Type \'exit\' or just press ENTER to quit the program. Have fun.')
-
-        while True:
-            question = input(self.SENTENCES_PREFIX[0])
-            if question == '' or question == 'exit':
-                break
-
-            answer = self.singlePredict(question)
-            if not answer:
-                print('Warning: sentence too long, sorry. Maybe try a simpler sentence.')
-                continue  # Back to the beginning, try again
-
-            # TODO: print(self.textData.batchSeq2str(batch.encoderSeqs, clean=True, reverse=True))
-
-            print('{}{}'.format(self.SENTENCES_PREFIX[1], self.textData.sequence2str(answer, clean=True)))
-            print(self.textData.sequence2str(answer))
-            print()
-
-    def singlePredict(self, question):
-        """ Predict the sentence
-        Args:
-            question (str): the raw input sentence
-        Return:
-            list <int>: the word ids corresponding to the answer
-        """
-        batch = self.textData.sentence2enco(question)
-        if not batch:
-            return None
-        ops, feedDict = self.model.step(batch)
-        output = self.sess.run(ops[0], feedDict)  # TODO: Summarize the output too (histogram, ...)
-        answer = self.textData.deco2sentence(output)
-
-        return answer
-
-    def manage_previous_model(self, sess):
+    def _restore_previous_model(self, sess):
         """ Restore or reset the model, depending of the parameters
+        If testing mode is set, the function has no effect
         If the destination directory already contains some file, it will handle the conflict as following:
          * If --reset is set, all present files will be removed (warning: no confirmation is asked) and the training
          restart from scratch (globStep & cie reinitialized)
          * Otherwise, it will depend of the directory content. If the directory contains:
            * No model files (only summary logs): works as a reset (restart from scratch)
-           * Other model files, but modelName not found (surely keepAll option changed): raise error, the user should
+           * Other model files, but model_name not found (surely keep_all option changed): raise error, the user should
            decide by himself what to do
            * The right model file (eventually some other): no problem, simply resume the training
         In any case, the directory will exist as it has been created by the summary writer
         Args:
             sess: The current running session
         """
+
+        if self.args.test == Composer.TestMode.ALL:  # On testing, the models are not restored here
+            return
 
         print('WARNING: ', end='')
 
@@ -370,7 +286,7 @@ class Composer:
         """
         tqdm.write('Checkpoint reached: saving model (don\'t stop the run)...')
         self._save_params()
-        self.saver.save(sess, self._get_model_name())  # TODO: Put a limit size (ex: 3GB for the model_dir)
+        self.saver.save(sess, self._get_model_name())  # Put a limit size (ex: 3GB for the model_dir) ?
         tqdm.write('Model saved.')
 
     def _restore_params(self):
@@ -388,7 +304,7 @@ class Composer:
 
         # If there is a previous model, restore some parameters
         config_name = os.path.join(self.model_dir, self.CONFIG_FILENAME)
-        if not self.args.reset and not self.args.createDataset and os.path.exists(config_name):
+        if not self.args.reset and not self.args.create_dataset and os.path.exists(config_name):
             # Loading
             config = configparser.ConfigParser()
             config.read(config_name)
@@ -410,8 +326,8 @@ class Composer:
             print()
 
     def _save_params(self):
-        """ Save the params of the model, like the current globStep value
-        Warning: if you modify this function, make sure the changes mirror loadModelParams
+        """ Save the params of the model, like the current glob_step value
+        Warning: if you modify this function, make sure the changes mirror load_params
         """
         config = configparser.ConfigParser()
         config['General'] = {}
@@ -428,13 +344,13 @@ class Composer:
 
     def _get_model_name(self):
         """ Parse the argument to decide were to save/load the model
-        This function is called at each checkpoint and the first time the model is load. If keepAll option is set, the
-        globStep value will be included in the name.
+        This function is called at each checkpoint and the first time the model is load. If keep_all option is set, the
+        glob_step value will be included in the name.
         Return:
             str: The path and name were the model need to be saved
         """
         model_name = os.path.join(self.model_dir, self.MODEL_NAME_BASE)
-        if self.args.keepAll:  # We do not erase the previously saved model by including the current step on the name
+        if self.args.keep_all:  # We do not erase the previously saved model by including the current step on the name
             model_name += '-' + str(self.glob_step)
         return model_name + self.MODEL_EXT
 

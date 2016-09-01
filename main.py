@@ -25,5 +25,5 @@ from deepmusic import composer
 
 
 if __name__ == "__main__":
-    composer = composer.Compositor()
+    composer = composer.Composer()
     composer.main()

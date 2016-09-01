@@ -20,3 +20,23 @@ What note representation ?
 * Midi vs ABC representation: one network just print the basic melody in ABC notation (text file as it was a char-rnn), the second network play this file as if it was improvising, playing chords and melody on some based tablature (as jazz man do).
 * Maybe try something closer of the musical theory (1rst, 2nd, 3rd degree instead of A,D,C) or something closer to the physic (frequency ? relative distance behind the note). Somehow the model should understand that 2 notes like C3 and C4 "feel" the sames.
 * Note2vec ? something which convert each note/chord into a multidimentional space (How to divide/separate chords/notes ? Pb of multiples representations: a same chord can be played in arpegio or using more complex partern. Should be a multilevel representation)
+
+
+
+Train conjointly récurent CNN  for the spacial dependency (use lstm containing a CNN ?) AND a standard RNN for the absolute position (best of both words ?) At the end a fully connected layer mix the two outputs to produce the final result: the CNN provide the pattern and the standard network provider the position (use simple res net)
+
+Look at deconvolution
+ResNet
+
+Input grid 2d: use more channels to represent velocity/duration ?
+Or simply the value of the cell represent the duration instead of binary
+
+Training: Play one bars and only after start to backpropagate for each steps (no need to penalize when the network has no way to know if he is doing right or wrong, meaning at the beginning). The idea is that the first bar is given for free just as initiation/setup (prendre de l'élant).
+For training, force the correct answer for each timestep
+
+Visualize the filters of the CNN.
+
+Walkthrough:
+
+* At first try simple midi (Joplin, pop, Bach, Mozart). Then try more complex composer (Chopin, Rachmaninoff < difficult for the change of tempo within the play)
+
