@@ -40,3 +40,9 @@ Walkthrough:
 
 * At first try simple midi (Joplin, pop, Bach, Mozart). Then try more complex composer (Chopin, Rachmaninoff < difficult for the change of tempo within the play)
 
+
+## Tools
+
+Some python library for midi file manipulation
+* Mido: seems the best one now for low level manipulation. Close the the original specs.
+* pretty_midi: higher level (piano rolls function could be really handy)

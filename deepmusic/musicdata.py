@@ -24,18 +24,14 @@ import pickle  # Saving the data
 import os  # Checking file existence
 import random  # When shuffling
 
+from deepmusic.midireader import MidiReader
+
 
 class Batch:
     """Structure containing batches info
     """
     def __init__(self):
         pass
-
-class Song:
-    """Structure containing a midi song
-    """
-    def __init__(self):
-        self.data = None  #  Sparse tensor of size [NB_KEYS,nb_bars*BAR_DIVISION]
 
 
 class MusicData:
@@ -52,9 +48,7 @@ class MusicData:
         self.DATA_DIR_MIDI = 'data/midi'  # Originals midi files
         self.DATA_DIR_SAMPLES = 'data/samples'  # Training/testing samples after pre-processing
         self.DATA_SAMPLES_EXT = '.pkl'
-        self.NB_KEYS = 88  # Vertical dimension of a song
-        self.BAR_DIVISION = 16  # Nb of tics in a bar (What about waltz ? is 12 better ?)
-        # Define a max song length ?
+        self.FILE_EXT = '.mid'  # Could eventually add support for other format later ?
 
         # Model parameters
         self.args = args
@@ -65,7 +59,7 @@ class MusicData:
         self._restore_dataset()
 
         # Plot some stats:
-        print('Loaded: {} songs'.format(len(self.songs)))  # TODO: Average, max, min duration
+        print('Loaded: {} songs'.format(len(self.songs)))  # TODO: Print average, max, min duration
 
         if self.args.play_dataset:
             # TODO: Display some images corresponding to the loaded songs
@@ -93,7 +87,7 @@ class MusicData:
             self._create_samples()
 
             print('Saving dataset...')
-            self._save_samples(samples_path)
+            #self._save_samples(samples_path)
 
     def _restore_samples(self, samples_path):
         """ Load samples from file
@@ -129,7 +123,17 @@ class MusicData:
     def _create_samples(self):
         """ Create the database from the midi files
         """
-        midi_dir = os.path.join(self.args.root_dir, self.DATA_DIR_MIDI)
+        midi_dir = os.path.join(self.args.root_dir, self.DATA_DIR_MIDI, self.args.dataset_tag)
+        midi_files = [os.path.join(midi_dir, f) for f in os.listdir(midi_dir) if f.endswith(self.FILE_EXT)]
+
+        for file in tqdm(midi_files):
+
+            tqdm.write('')
+            tqdm.write('Parsing {}'.format(file))
+
+            midi_song = MidiReader(file)
+            self.songs.append(midi_song)  # TODO: Only add if valid
+
 
         # TODO: Assert midi dir exist/ contains song
         pass
@@ -143,5 +147,7 @@ class MusicData:
         random.shuffle(self.songs)  # TODO: Segment the songs ?
         
         batches = []
+        
+        # Use tf.train.batch() ??
 
         return batches
