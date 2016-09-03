@@ -127,17 +127,20 @@ class MusicData:
         midi_dir = os.path.join(self.args.root_dir, self.DATA_DIR_MIDI, self.args.dataset_tag)
         midi_files = [os.path.join(midi_dir, f) for f in os.listdir(midi_dir) if f.endswith(self.FILE_EXT)]
 
-        for file in tqdm(midi_files):
+        for filename in tqdm(midi_files):
 
             tqdm.write('')
-            tqdm.write('Parsing {}'.format(file))
+            tqdm.write('Parsing {}'.format(filename))
 
             try:
-                new_song = MidiReader(file)
+                new_song = MidiReader.load_file(filename)
             except MidiInvalidException as e:
                 tqdm.write('File ignored: {}'.format(e))
             else:
                 self.songs.append(new_song)
+
+                # Test only !!!!!!!!!!!!
+                MidiReader.write_song(new_song, filename + '_test.mid')
 
         if not self.songs:
             raise ValueError('Empty dataset. Check that the folder exist and contains supported midi files.')

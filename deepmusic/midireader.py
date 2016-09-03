@@ -32,29 +32,23 @@ class MidiInvalidException(Exception):
 class MidiReader:
     """ Class which manage the midi files at the message level
     """
+    META_INFO_TYPES = ['midi_port', 'track_name', 'lyrics', 'end_of_track']  # Can safely be ignored
+    META_TEMPO_TYPES = ['key_signature', 'set_tempo', 'time_signature']  # Have an impact on how the song is played
 
-    def __init__(self, filename):
-        """
-        TODO: For now read only. Make it write too (from an empty file)
-        """
-        self.META_INFO_TYPES = ['midi_port', 'track_name', 'lyrics', 'end_of_track']  # Can safely be ignored
-        self.META_TEMPO_TYPES = ['key_signature', 'set_tempo', 'time_signature']  # Have an impact on how the song is played
+    NB_KEYS = 88  # Vertical dimension of a song
+    BAR_DIVISION = 16  # Nb of tics in a bar (What about waltz ? is 12 better ?)
 
-        self.NB_KEYS = 88  # Vertical dimension of a song
-        self.BAR_DIVISION = 16  # Nb of tics in a bar (What about waltz ? is 12 better ?)
+    MINIMUM_TRACK_LENGTH = 4  # Bellow this value, the track will be ignored
 
-        self.MINIMUM_TRACK_LENGTH = 4  # Bellow this value, the track will be ignored
+    # Define a max song length ?
 
-        # Define a max song length ?
+    #self.resolution = 0  # bpm
+    #self.initial_tempo = 0.0
 
-        #self.resolution = 0  # bpm
-        #self.initial_tempo = 0.0
+    #self.data = None  # Sparse tensor of size [NB_KEYS,nb_bars*BAR_DIVISION] or simply a list of note ?
 
-        #self.data = None  # Sparse tensor of size [NB_KEYS,nb_bars*BAR_DIVISION] or simply a list of note ?
-
-        self.load_file(filename)
-
-    def load_file(self, filename):
+    @staticmethod
+    def load_file(filename):
         """ Extract data from midi file
         Args:
             filename: a valid midi file
@@ -133,9 +127,9 @@ class MidiReader:
             for message in track:
                 abs_tick += message.time
                 if isinstance(message, mido.MetaMessage):  # Lyrics, track name and other meta info
-                    if message.type in self.META_INFO_TYPES:
+                    if message.type in MidiReader.META_INFO_TYPES:
                         pass
-                    elif message.type in self.META_TEMPO_TYPES:
+                    elif message.type in MidiReader.META_TEMPO_TYPES:
                         # TODO: Could be just a warning
                         raise MidiInvalidException('Track {} should not contain {}'.format(i, message.type))
                     else:
@@ -150,7 +144,6 @@ class MidiReader:
                         if i-1 != message.channel:  # Warning: for type 1 the tracks are shifted because of the tempo map # TODO: Channel management for type 0
                             raise MidiInvalidException('Notes belong to the wrong tracks ({} instead of {})'.format(i, message.channel))
                         buffer_notes.append(new_note)
-                        pass
                     elif message.type == 'note_off' or message.type == 'note_on':  # Note released
                         for note in buffer_notes:
                             if note.note == message.note:
@@ -180,7 +173,7 @@ class MidiReader:
             # Assert
             if buffer_notes:  # All notes should have ended
                 raise MidiInvalidException('Some notes ({}) did not ended'.format(len(buffer_notes)))
-            if len(new_track.notes) < self.MINIMUM_TRACK_LENGTH:
+            if len(new_track.notes) < MidiReader.MINIMUM_TRACK_LENGTH:
                 tqdm.write('    Track {} ignored (too short): {} notes'.format(i, len(new_track.notes)))
                 continue
             if new_track.is_drum:
@@ -199,3 +192,39 @@ class MidiReader:
         )
 
         return new_song
+
+    @staticmethod
+    def write_song(song, filename):
+        """ Extract data from midi file
+        Args:
+            Song: a song object containing the tracks and melody
+            filename: the path were to save the song
+        """
+
+        midi_data = mido.MidiFile()
+        # TODO: Define track 0
+
+        for track in song.tracks:
+            # Define the track
+            new_track = mido.MidiTrack()
+            midi_data.tracks.append(new_track)
+            new_track.append(mido.Message('program_change', program=0, time=0))  # Played with standard piano
+
+            messages = []
+            for note in track.notes:
+                # Add all messages in absolute time
+                messages.append(mido.Message('note_on', note=note.note, velocity=64, time=note.tick))
+                messages.append(mido.Message('note_off', note=note.note, velocity=64, time=note.tick+note.duration))
+
+            # Reorder the messages chronologically
+            messages.sort(key=lambda x: x.time)
+
+            # Convert absolute tick in relative tick
+            last_time = 0
+            for message in messages:
+                message.time -= last_time
+                last_time += message.time
+
+                new_track.append(message)
+
+        midi_data.save(filename)
