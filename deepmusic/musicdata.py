@@ -25,6 +25,7 @@ import os  # Checking file existence
 import random  # When shuffling
 
 from deepmusic.midireader import MidiReader
+from deepmusic.midireader import MidiInvalidException
 
 
 class Batch:
@@ -131,11 +132,16 @@ class MusicData:
             tqdm.write('')
             tqdm.write('Parsing {}'.format(file))
 
-            midi_song = MidiReader(file)
-            self.songs.append(midi_song)  # TODO: Only add if valid
+            try:
+                new_song = MidiReader(file)
+            except MidiInvalidException as e:
+                tqdm.write('File ignored: {}'.format(e))
+            else:
+                self.songs.append(new_song)
 
+        if not self.songs:
+            raise ValueError('Empty dataset. Check that the folder exist and contains supported midi files.')
 
-        # TODO: Assert midi dir exist/ contains song
         pass
 
     def get_batches(self):

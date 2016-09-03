@@ -22,6 +22,8 @@ Mid-level interface for the python files
 import mido  # Midi lib
 from tqdm import tqdm  # Plotting messages
 
+import deepmusic.songstruct as music
+
 
 class MidiInvalidException(Exception):
     pass
@@ -35,14 +37,20 @@ class MidiReader:
         """
         TODO: For now read only. Make it write too (from an empty file)
         """
+        self.META_INFO_TYPES = ['midi_port', 'track_name', 'lyrics', 'end_of_track']  # Can safely be ignored
+        self.META_TEMPO_TYPES = ['key_signature', 'set_tempo', 'time_signature']  # Have an impact on how the song is played
+
         self.NB_KEYS = 88  # Vertical dimension of a song
         self.BAR_DIVISION = 16  # Nb of tics in a bar (What about waltz ? is 12 better ?)
+
+        self.MINIMUM_TRACK_LENGTH = 4  # Bellow this value, the track will be ignored
+
         # Define a max song length ?
 
-        self.resolution = 0  # bpm
-        self.initial_tempo = 0.0
+        #self.resolution = 0  # bpm
+        #self.initial_tempo = 0.0
 
-        self.data = None  #  Sparse tensor of size [NB_KEYS,nb_bars*BAR_DIVISION]
+        #self.data = None  # Sparse tensor of size [NB_KEYS,nb_bars*BAR_DIVISION] or simply a list of note ?
 
         self.load_file(filename)
 
@@ -51,7 +59,7 @@ class MidiReader:
         Args:
             filename: a valid midi file
         Return:
-            TODO
+            Song: a song object containing the tracks and melody
         """
         # Load in the MIDI data using the midi module
         midi_data = mido.MidiFile(filename)
@@ -70,7 +78,7 @@ class MidiReader:
         # If negative (first byte=1), the mode is SMTPE timecode (unsupported)
         # 1 MIDI clock = 1 beat = 1 quarter note
 
-        print('{}: type {}, {} tracks, {} tics'.format(
+        print('{}: type {}, {} tracks, {} ticks/beat'.format(
             filename,
             midi_data.type,
             len(midi_data.tracks),
@@ -82,6 +90,8 @@ class MidiReader:
             raise MidiInvalidException('Only type 1 supported ({} given)'.format(midi_data.type))
         if not 0 < midi_data.ticks_per_beat < 128:
             raise MidiInvalidException('SMTPE timecode not supported ({} given)'.format(midi_data.ticks_per_beat))
+
+        # TODO: Support at least for type 0
 
         # Get tracks messages
 
@@ -97,72 +107,95 @@ class MidiReader:
         # Each event contain begins by a delta time value, which correspond to the number of ticks from the previous
         # event (0 for simultaneous event)
 
+        tempo_map = midi_data.tracks[0]  # Will contains the tick scales
+        # TODO: smpte_offset
+
+        # Warning: The drums are filtered
+
         # Merge tracks ?
         #midi_data.tracks = [mido.merge_tracks(midi_data.tracks)] ??
-
-        tempo_map = midi_data.tracks[0]  # Will contains the tick scales
 
         # Assert
         for message in tempo_map:
             if not isinstance(message, mido.MetaMessage):
                 raise MidiInvalidException('Tempo map should not contains notes')
 
+        new_song = music.Song()
+
         for i, track in enumerate(midi_data.tracks[1:]):  # We ignore the tempo map
+            i += 1  # Warning: We have skipped the track 0 so shift the track id
             tqdm.write('Track {}: {}'.format(i, track.name))
+
+            new_track = music.Track()
+
+            buffer_notes = []  # Store the current notes (pressed but not released)
+            abs_tick = 0  # Absolute nb of ticks from the beginning of the track
             for message in track:
-                if isinstance(message, mido.MetaMessage):  # Lyrics, track name and other useless info
-                    if message.type == 'instrument_name':
-                        tqdm.write('{}'.format(message))
-                    elif message._spec.type_byte > 0x50:
-                        # Following the midi specification, those signals contains more than
-                        # simple indication and should modify the way the piece is played (tempo, key signature,...)
+                abs_tick += message.time
+                if isinstance(message, mido.MetaMessage):  # Lyrics, track name and other meta info
+                    if message.type in self.META_INFO_TYPES:
+                        pass
+                    elif message.type in self.META_TEMPO_TYPES:
+                        # TODO: Could be just a warning
                         raise MidiInvalidException('Track {} should not contain {}'.format(i, message.type))
+                    else:
+                        err_msg = 'Track {} contains unsupported meta-message type ({})'.format(i, message.type)
+                        raise MidiInvalidException(err_msg)
                     # What about 'sequence_number', cue_marker ???
                 else:  # Note event
-                    tqdm.write('{}'.format(message.time))
+                    if message.type == 'note_on' and message.velocity != 0:  # Note added
+                        new_note = music.Note()
+                        new_note.tick = abs_tick
+                        new_note.note = message.note
+                        if i-1 != message.channel:  # Warning: for type 1 the tracks are shifted because of the tempo map # TODO: Channel management for type 0
+                            raise MidiInvalidException('Notes belong to the wrong tracks ({} instead of {})'.format(i, message.channel))
+                        buffer_notes.append(new_note)
+                        pass
+                    elif message.type == 'note_off' or message.type == 'note_on':  # Note released
+                        for note in buffer_notes:
+                            if note.note == message.note:
+                                note.duration = abs_tick - note.tick
+                                buffer_notes.remove(note)
+                                new_track.notes.append(note)
+                    elif message.type == 'program_change':  # Instrument change
+                        if not new_track.set_instrument(message):
+                            # TODO: We should create another track with the new instrument
+                            raise MidiInvalidException('Track {} as already a program defined'.format(i))
+                        pass
+                    elif message.type == 'control_change':  # Damper pedal, mono/poly, channel volume,...
+                        # Ignored
+                        pass
+                    elif message.type == 'aftertouch':  # Signal send after a key has been press. What real effect ?
+                        # Ignored ?
+                        pass
+                    elif message.type == 'pitchwheel':  # Modulate the song
+                        # Ignored
+                        pass
+                    else:
+                        err_msg = 'Track {} contains unsupported message type ({})'.format(i, message)
+                        raise MidiInvalidException(err_msg)
+                # Message read
+            # Track read
 
-        return
+            # Assert
+            if buffer_notes:  # All notes should have ended
+                raise MidiInvalidException('Some notes ({}) did not ended'.format(len(buffer_notes)))
+            if len(new_track.notes) < self.MINIMUM_TRACK_LENGTH:
+                tqdm.write('    Track {} ignored (too short): {} notes'.format(i, len(new_track.notes)))
+                continue
+            if new_track.is_drum:
+                tqdm.write('    Track {} ignored (is drum)'.format(i))
+                continue
 
-        #midi_data.
+            new_song.tracks.append(new_track)
+        # All track read
 
-        # Load in the MIDI data using the midi module
-        midi_data = mido.MidiFile(midi_file)
+        if not new_song.tracks:
+            raise MidiInvalidException('Empty song. No track added')
 
-        # Convert tick values in midi_data to absolute, a useful thing.
-        midi_data.make_ticks_abs()
+        tqdm.write('Song loaded: {} tracks, {} notes'.format(
+            len(new_song.tracks),
+            sum([len(t.notes) for t in new_song.tracks]))
+        )
 
-        # Store the resolution for later use
-        self.resolution = midi_data.resolution
-
-        # Populate the list of tempo changes (tick scales)
-        self._load_tempo_changes(midi_data)
-
-        # Update the array which maps ticks to time
-        max_tick = max([max([e.tick for e in t]) for t in midi_data]) + 1
-        # If max_tick is huge, the MIDI file is probably corrupt
-        # and creating the __tick_to_time array will thrash memory
-        if max_tick > MAX_TICK:
-            raise ValueError(('MIDI file has a largest tick of {},'
-                              ' it is likely corrupt'.format(max_tick)))
-
-        # Create list that maps ticks to time in seconds
-        self._update_tick_to_time(max_tick)
-
-        # Populate the list of key and time signature changes
-        self._load_metadata(midi_data)
-
-        # Check that there are tempo, key and time change events
-        # only on track 0
-        if sum([sum([isinstance(event, (midi.events.SetTempoEvent,
-                                        midi.events.KeySignatureEvent,
-                                        midi.events.TimeSignatureEvent))
-                    for event in track]) for track in midi_data[1:]]):
-            warnings.warn(("Tempo, Key or Time signature change events"
-                           " found on non-zero tracks."
-                           "  This is not a valid type 0 or type 1 MIDI"
-                           " file. Tempo, Key or Time Signature"
-                           " may be wrong."),
-                          RuntimeWarning)
-
-        # Populate the list of instruments
-        self._load_instruments(midi_data)
+        return new_song
