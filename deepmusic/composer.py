@@ -26,7 +26,6 @@ import configparser  # Saving the models parameters
 import datetime  # Chronometer
 import os  # Files management
 from typing import Dict, Tuple, List
-
 from tqdm import tqdm  # Progress bar
 import tensorflow as tf
 
@@ -109,6 +108,8 @@ class Composer:
 
         # Network options (Warning: if modifying something here, also make the change on save/restore_params() )
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
+        nn_args.add_argument('--hidden_size', type=int, default=256, help='Size of one neural network layer')
+        nn_args.add_argument('--num_layers', type=int, default=2, help='Nb of layers of the RNN')
 
         # Training options (Warning: if modifying something here, also make the change on save/restore_params() )
         training_args = parser.add_argument_group('Training options')
@@ -116,6 +117,7 @@ class Composer:
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
         training_args.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
+        training_args.add_argument('--sample_length', type=int, default=40, help='The number of beats of a training sentence')  # Warning: What is the real unit quarter note ? compressed tick ?
 
         return parser.parse_args(args)
 
@@ -316,6 +318,8 @@ class Composer:
 
             # Restoring the the parameters
             self.glob_step = config['General'].getint('glob_step')
+            self.args.hidden_size = config['Network'].getint('hidden_size')
+            self.args.num_layers = config['Network'].getint('num_layers')
 
             # No restoring for training params, batch size or other non model dependent parameters
 
@@ -323,6 +327,8 @@ class Composer:
             print()
             print('Warning: Restoring parameters:')
             print('glob_step: {}'.format(self.glob_step))
+            print('hidden_size: {}'.format(self.args.hidden_size))
+            print('num_layers: {}'.format(self.args.num_layers))
             print()
 
     def _save_params(self):
@@ -333,11 +339,15 @@ class Composer:
         config['General'] = {}
         config['General']['version'] = self.CONFIG_VERSION
         config['General']['glob_step'] = str(self.glob_step)
+
+        config['Network'] = {}
+        config['Network']['hidden_size'] = str(self.args.hidden_size)
         
         # Keep track of the learning params (but without restoring them)
         config['Training (won\'t be restored)'] = {}
         config['Training (won\'t be restored)']['learning_rate'] = str(self.args.learning_rate)
         config['Training (won\'t be restored)']['batch_size'] = str(self.args.batch_size)
+        config['Training (won\'t be restored)']['sample_length'] = str(self.args.sample_length)
 
         with open(os.path.join(self.model_dir, self.CONFIG_FILENAME), 'w') as config_file:
             config.write(config_file)

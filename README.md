@@ -7,12 +7,12 @@ Experiment diverse Deep learning models for music generation with TensorFlow
 ## Installation
 
 The program require the following dependencies (easy to install using pip):
- * python 3
- * tensorflow (tested with v0.9.0)
- * numpy
+ * Python 3
+ * TensorFlow (tested with v0.10.0rc0. Won't work with previous versions)
  * CUDA (for using gpu, see TensorFlow [installation page](https://www.tensorflow.org/versions/master/get_started/os_setup.html#optional-install-cuda-gpus-on-linux) for more details)
- * mido (midi library)
- * tqdm (for the nice progression bars)
+ * Numpy
+ * Mido (midi library)
+ * Tqdm (for the nice progression bars)
 
 ## Running
 

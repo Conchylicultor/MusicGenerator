@@ -26,6 +26,7 @@ import random  # When shuffling
 
 from deepmusic.midireader import MidiReader
 from deepmusic.midireader import MidiInvalidException
+import deepmusic.songstruct as music
 
 
 class Batch:
@@ -44,6 +45,7 @@ class MusicData:
         Args:
             args: parameters of the model
         """
+
         # Filename and directories constants
         self.DATA_VERSION = '0.1'  # Assert compatibility between versions
         self.DATA_DIR_MIDI = 'data/midi'  # Originals midi files
@@ -88,7 +90,7 @@ class MusicData:
             self._create_samples()
 
             print('Saving dataset...')
-            #self._save_samples(samples_path)
+            self._save_samples(samples_path)
 
     def _restore_samples(self, samples_path):
         """ Load samples from file
@@ -101,7 +103,7 @@ class MusicData:
             data = pickle.load(handle)  # Warning: If adding something here, also modifying saveDataset
 
             # Check the version
-            current_version = data('version')
+            current_version = data['version']
             if current_version != self.DATA_VERSION:
                 raise UserWarning('Present configuration version {0} does not match {1}.'.format(current_version, self.DATA_VERSION))
 

@@ -19,6 +19,8 @@
 Hierarchical data structures of a song
 """
 
+NB_NOTES = 88  # Vertical dimension of a song (Nb of keys on a piano)
+
 
 class Note:
     """ Structure which encapsulate the song data
@@ -26,7 +28,7 @@ class Note:
     def __init__(self):
         self.tick = 0
         self.note = 0
-        self.duration = 0
+        self.duration = 32  # TODO: Define the default duration / TODO: Use standard musical units (quarter note/eighth note) ?, don't convert here
 
 
 class Track:

@@ -47,7 +47,10 @@ class MidiReader:
         'time_signature'
     ]
 
-    NB_KEYS = 88  # Vertical dimension of a song
+    MIDI_PIANO_RANGE = [21, 108]  # Min and max (included) midi note on a piano
+    # TODO: Warn/throw when we try to add a note outside this range
+    # TODO: Easy conversion from this range to tensor vector id (midi_note2tf_id)
+
     BAR_DIVISION = 16  # Nb of tics in a bar (What about waltz ? is 12 better ?)
 
     MINIMUM_TRACK_LENGTH = 4  # Bellow this value, the track will be ignored
