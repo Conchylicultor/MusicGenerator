@@ -139,9 +139,6 @@ class MusicData:
             else:
                 self.songs.append(new_song)
 
-                # Test only !!!!!!!!!!!!
-                MidiReader.write_song(new_song, filename + '_test.mid')
-
         if not self.songs:
             raise ValueError('Empty dataset. Check that the folder exist and contains supported midi files.')
 

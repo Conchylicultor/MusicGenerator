@@ -20,15 +20,6 @@ Hierarchical data structures of a song
 """
 
 
-class Event:
-    """ Structure which contain an event
-    """
-    def __init__(self):
-        self.event = None  # Note or instrument
-        self.channel = 0
-        self.tick = 0
-
-
 class Note:
     """ Structure which encapsulate the song data
     """
@@ -36,31 +27,6 @@ class Note:
         self.tick = 0
         self.note = 0
         self.duration = 0
-
-
-class Instrument:
-    """ Structure which encapsulate one instrument data
-    """
-    def __init__(self):
-        """ Create default instrument (piano)
-        """
-        self.program = 0  # Instrument id, accordingly to the midi specification
-        self.is_drum = False
-
-    def load_from_mido(self, msg):
-        """ Initialize from a mido message
-        Args:
-            msg (mido.MidiMessage): a valid control_change message
-        """
-        self.program = msg.value
-        if msg.channel == 10:
-            self.is_drum = True
-        # TODO: If channel=10, percussion
-
-    def get_is_drum(self):
-        if self.is_drum or self.program > 112:
-            return True
-        return False
 
 
 class Track:
@@ -92,10 +58,10 @@ class Track:
         return True
 
 
-
 class Song:
     """ Structure which encapsulate the song data
     """
     def __init__(self):
-        self.tempo_map = None
+        self.ticks_per_beat = 96
+        self.tempo_map = []
         self.tracks = []  # List[Track]

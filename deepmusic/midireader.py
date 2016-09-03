@@ -32,8 +32,20 @@ class MidiInvalidException(Exception):
 class MidiReader:
     """ Class which manage the midi files at the message level
     """
-    META_INFO_TYPES = ['midi_port', 'track_name', 'lyrics', 'end_of_track']  # Can safely be ignored
-    META_TEMPO_TYPES = ['key_signature', 'set_tempo', 'time_signature']  # Have an impact on how the song is played
+    META_INFO_TYPES = [  # Can safely be ignored
+        'midi_port',
+        'track_name',
+        'lyrics',
+        'end_of_track',
+        'copyright',
+        'marker',
+        'text'
+    ]
+    META_TEMPO_TYPES = [  # Have an impact on how the song is played
+        'key_signature',
+        'set_tempo',
+        'time_signature'
+    ]
 
     NB_KEYS = 88  # Vertical dimension of a song
     BAR_DIVISION = 16  # Nb of tics in a bar (What about waltz ? is 12 better ?)
@@ -51,7 +63,7 @@ class MidiReader:
     def load_file(filename):
         """ Extract data from midi file
         Args:
-            filename: a valid midi file
+            filename (str): a valid midi file
         Return:
             Song: a song object containing the tracks and melody
         """
@@ -106,19 +118,34 @@ class MidiReader:
 
         # Warning: The drums are filtered
 
-        # Merge tracks ?
+        # Merge tracks ? < Not when creating the dataset
         #midi_data.tracks = [mido.merge_tracks(midi_data.tracks)] ??
-
-        # Assert
-        for message in tempo_map:
-            if not isinstance(message, mido.MetaMessage):
-                raise MidiInvalidException('Tempo map should not contains notes')
 
         new_song = music.Song()
 
+        new_song.ticks_per_beat = midi_data.ticks_per_beat
+
+        # TODO: Normalize the ticks per beats (same for all songs)
+
+        for message in tempo_map:
+            # TODO: Check we are only 4/4 (and there is no tempo changes ?)
+            if not isinstance(message, mido.MetaMessage):
+                raise MidiInvalidException('Tempo map should not contains notes')
+            if message.type in MidiReader.META_INFO_TYPES:
+                pass
+            elif message.type == 'set_tempo':
+                new_song.tempo_map.append(message)
+            elif message.type in MidiReader.META_TEMPO_TYPES:  # We ignore the key signature and time_signature ?
+                pass
+            elif message.type == 'smpte_offset':
+                pass  # TODO
+            else:
+                err_msg = 'Header track contains unsupported meta-message type ({})'.format(message.type)
+                raise MidiInvalidException(err_msg)
+
         for i, track in enumerate(midi_data.tracks[1:]):  # We ignore the tempo map
             i += 1  # Warning: We have skipped the track 0 so shift the track id
-            tqdm.write('Track {}: {}'.format(i, track.name))
+            #tqdm.write('Track {}: {}'.format(i, track.name))
 
             new_track = music.Track()
 
@@ -142,7 +169,7 @@ class MidiReader:
                         new_note.tick = abs_tick
                         new_note.note = message.note
                         if i-1 != message.channel:  # Warning: for type 1 the tracks are shifted because of the tempo map # TODO: Channel management for type 0
-                            raise MidiInvalidException('Notes belong to the wrong tracks ({} instead of {})'.format(i, message.channel))
+                            raise MidiInvalidException('Notes belong to the wrong tracks ({} instead of {})'.format(i, message.channel))  # Warning: May not be an error (drums ?) but probably
                         buffer_notes.append(new_note)
                     elif message.type == 'note_off' or message.type == 'note_on':  # Note released
                         for note in buffer_notes:
@@ -174,10 +201,10 @@ class MidiReader:
             if buffer_notes:  # All notes should have ended
                 raise MidiInvalidException('Some notes ({}) did not ended'.format(len(buffer_notes)))
             if len(new_track.notes) < MidiReader.MINIMUM_TRACK_LENGTH:
-                tqdm.write('    Track {} ignored (too short): {} notes'.format(i, len(new_track.notes)))
+                tqdm.write('Track {} ignored (too short): {} notes'.format(i, len(new_track.notes)))
                 continue
             if new_track.is_drum:
-                tqdm.write('    Track {} ignored (is drum)'.format(i))
+                tqdm.write('Track {} ignored (is drum)'.format(i))
                 continue
 
             new_song.tracks.append(new_track)
@@ -198,13 +225,17 @@ class MidiReader:
         """ Extract data from midi file
         Args:
             Song: a song object containing the tracks and melody
-            filename: the path were to save the song
+            filename (str): the path were to save the song
         """
 
-        midi_data = mido.MidiFile()
-        # TODO: Define track 0
+        midi_data = mido.MidiFile(ticks_per_beat=song.ticks_per_beat)
 
-        for track in song.tracks:
+        # Define track 0
+        new_track = mido.MidiTrack()
+        midi_data.tracks.append(new_track)
+        new_track.extend(song.tempo_map)
+
+        for i, track in enumerate(song.tracks):
             # Define the track
             new_track = mido.MidiTrack()
             midi_data.tracks.append(new_track)
@@ -213,8 +244,19 @@ class MidiReader:
             messages = []
             for note in track.notes:
                 # Add all messages in absolute time
-                messages.append(mido.Message('note_on', note=note.note, velocity=64, time=note.tick))
-                messages.append(mido.Message('note_off', note=note.note, velocity=64, time=note.tick+note.duration))
+                messages.append(mido.Message(
+                    'note_on',
+                    note=note.note,
+                    velocity=64,
+                    channel=i,
+                    time=note.tick))
+                messages.append(mido.Message(
+                    'note_off',
+                    note=note.note,
+                    velocity=64,
+                    channel=i,
+                    time=note.tick+note.duration)
+                )
 
             # Reorder the messages chronologically
             messages.sort(key=lambda x: x.time)
