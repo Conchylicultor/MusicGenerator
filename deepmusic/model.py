@@ -71,23 +71,21 @@ class Model:
                 ]
 
         # Projection
-        with tf.variable_scope('note_projection'):  # TODO: Make sure reuse is True
-            W = tf.get_variable(
-                'weights',
-                [self.args.hidden_size, music.NB_NOTES],
-                initializer=tf.truncated_normal_initializer()
+        with tf.name_scope('note_projection'):
+            W = tf.Variable(
+                tf.truncated_normal([self.args.hidden_size, music.NB_NOTES]),
+                name='weights'
             )
-            b = tf.get_variable(
-                'bias',
-                [music.NB_NOTES],
-                initializer=tf.truncated_normal_initializer()  # Tune the initializer ?
+            b = tf.Variable(
+                tf.truncated_normal([music.NB_NOTES]),  # Tune the initializer ?
+                name='bias',
             )
 
             def project_note(X):
                 return tf.matmul(X, W) + b  # [batch_size, NB_NOTE]
 
         # RNN network
-        with tf.variable_scope('rnn_cell'):  # TODO: How to make this appear on the graph ?
+        with tf.name_scope('rnn_cell'):  # TODO: How to make this appear on the graph ?
             rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
             #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!)
             rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
@@ -114,7 +112,7 @@ class Model:
             decoder_inputs=self.inputs,
             initial_state=initial_state,
             cell=rnn_cell,
-            loop_function=loop_rnn  # TODO: WARNING!!! INCOMPATIBLE WITH MULTI RNN ??
+            loop_function=loop_rnn  # TODO: WARNING!!! Check the graph, looks strange ??
         )
 
         # Final projection

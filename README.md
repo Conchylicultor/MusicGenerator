@@ -22,4 +22,4 @@ To visualize the computational graph and the cost with TensorBoard, just run ten
 
 ## Results
 
-...
+The different experiments are explained [here](docs/models.md)
