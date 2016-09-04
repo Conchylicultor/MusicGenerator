@@ -72,9 +72,9 @@ class Model:
 
         # RNN network
         with tf.name_scope('rnn_cell'):  # TODO: How to make this appear on the graph ?
-            rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size)  # Or GRUCell, LSTMCell(args.hidden_size)
+            rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
             #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!)
-            rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers)
+            rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
 
         initial_state = rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
 
@@ -150,11 +150,17 @@ class Model:
         ops = None
 
         if not self.args.test:  # Training
-            # TODO: Feed placeholder
+            # Feed placeholder
+            for i in range(self.args.sample_length):
+                feed_dict[self.inputs[i]] = batch.inputs[i]
+                feed_dict[self.targets[i]] = batch.targets[i]
 
             ops = (self.opt_op,)
         else:  # Testing (batch_size == 1)
-            # TODO: Feed placeholder
+            # Feed placeholder
+            for i in range(self.args.sample_length):
+                feed_dict[self.inputs[i]] = batch.inputs[i]
+                # TODO: What to put for initialisation values (empty ? random ?) ? feed_dict[self.targets[0]] =
 
             ops = (self.outputs,)
 

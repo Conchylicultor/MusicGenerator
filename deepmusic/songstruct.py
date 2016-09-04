@@ -18,8 +18,13 @@
 """
 Hierarchical data structures of a song
 """
+MIDI_NOTES_RANGE = [21, 108]  # Min and max (included) midi note on a piano
+# TODO: Warn/throw when we try to add a note outside this range
+# TODO: Easy conversion from this range to tensor vector id (midi_note2tf_id)
 
-NB_NOTES = 88  # Vertical dimension of a song (Nb of keys on a piano)
+NB_NOTES = MIDI_NOTES_RANGE[1] - MIDI_NOTES_RANGE[0] + 1  # Vertical dimension of a song (=88 of keys for a piano)
+
+BAR_DIVISION = 16  # Nb of tics in a bar (What about waltz ? is 12 better ?)
 
 
 class Note:
@@ -29,6 +34,21 @@ class Note:
         self.tick = 0
         self.note = 0
         self.duration = 32  # TODO: Define the default duration / TODO: Use standard musical units (quarter note/eighth note) ?, don't convert here
+
+    def get_relative_note(self):
+        """ Convert the absolute midi position into the range given by MIDI_NOTES_RANGE
+        Return
+            int: The new position relative to the range (position on keyboard)
+        """
+        return self.note - MIDI_NOTES_RANGE[0]
+
+    def set_relative_note(self, rel):
+        """ Convert given note into a absolute midi position
+        Args:
+            rel (int): The new position relative to the range (position on keyboard)
+        """
+        # TODO: assert range (rel < NB_NOTES)?
+        self.note = rel + MIDI_NOTES_RANGE[0]
 
 
 class Track:
@@ -67,3 +87,9 @@ class Song:
         self.ticks_per_beat = 96
         self.tempo_map = []
         self.tracks = []  # List[Track]
+
+    def __len__(self):
+        """ Return the absolute tick when the last note end
+        Note that the length is recomputed each time the function is called
+        """
+        return max([max([n.tick + n.duration for n in t.notes]) for t in self.tracks])

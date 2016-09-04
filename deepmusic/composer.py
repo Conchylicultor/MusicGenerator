@@ -342,6 +342,7 @@ class Composer:
 
         config['Network'] = {}
         config['Network']['hidden_size'] = str(self.args.hidden_size)
+        config['Network']['num_layers'] = str(self.args.num_layers)
         
         # Keep track of the learning params (but without restoring them)
         config['Training (won\'t be restored)'] = {}

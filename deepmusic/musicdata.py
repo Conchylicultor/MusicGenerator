@@ -23,6 +23,8 @@ from tqdm import tqdm  # Progress bar when creating dataset
 import pickle  # Saving the data
 import os  # Checking file existence
 import random  # When shuffling
+import numpy as np  # Batch data
+# TODO: import cv2  # Plot the piano roll
 
 from deepmusic.midireader import MidiReader
 from deepmusic.midireader import MidiInvalidException
@@ -33,7 +35,8 @@ class Batch:
     """Structure containing batches info
     """
     def __init__(self):
-        pass
+        self.inputs = []
+        self.targets = []
 
 
 class MusicData:
@@ -47,11 +50,17 @@ class MusicData:
         """
 
         # Filename and directories constants
-        self.DATA_VERSION = '0.1'  # Assert compatibility between versions
+        self.DATA_VERSION = '0.2'  # Assert compatibility between versions
         self.DATA_DIR_MIDI = 'data/midi'  # Originals midi files
         self.DATA_DIR_SAMPLES = 'data/samples'  # Training/testing samples after pre-processing
         self.DATA_SAMPLES_EXT = '.pkl'
         self.FILE_EXT = '.mid'  # Could eventually add support for other format later ?
+
+        # Define the time unit
+        # Invert of time note which define the maximum resolution for a song. Ex: 2 for 1/2 note, 4 for 1/4 of note
+        # TODO: Where to define ? Should be in self.args.
+        self.MAXIMUM_SONG_RESOLUTION = 4
+        self.NOTES_PER_BAR = 4
 
         # Model parameters
         self.args = args
@@ -90,7 +99,7 @@ class MusicData:
             self._create_samples()
 
             print('Saving dataset...')
-            self._save_samples(samples_path)
+            # TODO: Change: self._save_samples(samples_path)
 
     def _restore_samples(self, samples_path):
         """ Load samples from file
@@ -139,12 +148,91 @@ class MusicData:
             except MidiInvalidException as e:
                 tqdm.write('File ignored: {}'.format(e))
             else:
-                self.songs.append(new_song)
+                self.songs.append(self._convert_song2array(new_song))
+
+                new_song = self._convert_array2song(self.songs[-1])  # TODO: TEST ONLY
+                MidiReader.write_song(new_song, filename+'_test.mid')  # TODO: TEST ONLY
 
         if not self.songs:
             raise ValueError('Empty dataset. Check that the folder exist and contains supported midi files.')
 
         pass
+
+    def _convert_song2array(self, song):
+        """ Convert a given song to a numpy multi-dimensional array (piano roll)
+        The song is temporally normalized, meaning that all ticks and duration will be converted to a specific
+        ticks_per_beat independent unit.
+        For now, the changes of tempo are ignored. Only 4/4 is supported.
+        Warning: The duration is ignored: All note have the same duration (1 unit)
+        Args:
+            song (Song): The song to convert
+        Return:
+            Array: the numpy array
+        """
+
+        # Convert the absolute ticks in standardized unit
+        song_length = len(song)
+        scale = self._get_scale(song)
+
+        print(scale)
+        print(song.ticks_per_beat)
+        print(song_length)
+        print(song_length/scale)
+        print(song_length//scale)
+
+        # Use sparse array instead ?
+        piano_roll = np.zeros([music.NB_NOTES, np.ceil(song_length/scale)], dtype=float)
+
+        # Adding all notes
+        for track in song.tracks:
+            for note in track.notes:
+                #print(note.tick/scale, note.tick//scale, 'Note added on {},{}'.format(note.get_relative_note(),note.tick//scale))
+                piano_roll[note.get_relative_note()][note.tick//scale] = 1.0
+
+        return piano_roll
+
+    def _convert_array2song(self, array):
+        """ Create a new song from a numpy array
+        A note will be created for each non empty case of the array. The song will contain a single track, and use the
+        default beats_per_tick as midi resolution
+        For now, the changes of tempo are ignored. Only 4/4 is supported.
+        Warning: All note have the same duration, the default value defined in music.Note
+        Args:
+            np.Array: the numpy array
+        Return:
+            song (Song): The song to convert
+        """
+
+        new_song = music.Song()
+        main_track = music.Track()
+
+        scale = self._get_scale(new_song)
+
+        for index, x in np.ndenumerate(array):  # Add some notes
+            if x > 0 + 1e-12:  # Note added (TODO: What should be the condition, =1 ? sigmoid>0.5 ?)
+                new_note = music.Note()
+
+                new_note.set_relative_note(index[0])
+                new_note.tick = index[1] * scale  # Absolute time in tick from the beginning
+
+                main_track.notes.append(new_note)
+
+        new_song.tracks.append(main_track)
+
+        return new_song
+
+    def _get_scale(self, song):
+        """ Compute the unit scale factor for the given song
+        The scale factor allow to have a tempo independent time unit, to represent the song as an array
+        of dimension [key, time_unit]
+        Return:
+            int: the scale factor for the current song
+        """
+        # TODO: doc:
+        # Using scale: time_unit = abs_ticks//scale
+
+        # TODO: Assert that the scale factor is not a float (and replace // by /)
+        return 4 * song.ticks_per_beat // (self.MAXIMUM_SONG_RESOLUTION*self.NOTES_PER_BAR)
 
     def get_batches(self):
         """Prepare the batches for the current epoch
@@ -155,6 +243,10 @@ class MusicData:
         random.shuffle(self.songs)  # TODO: Segment the songs ?
         
         batches = []
+
+        # TODO: Create batches (randomly cut each song in some small parts (need to know the total length for that)
+        # then create the big matrix (NB_NOTE*sample_length) and turn that into batch). If process too long,
+        # could save the created batches in a new folder, data/samples or save/model.
         
         # Use tf.train.batch() ??
 
