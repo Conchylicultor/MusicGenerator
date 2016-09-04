@@ -30,6 +30,7 @@ from tqdm import tqdm  # Progress bar
 import tensorflow as tf
 
 from deepmusic.musicdata import MusicData
+from deepmusic.midireader import MidiReader
 from deepmusic.model import Model
 
 
@@ -228,11 +229,34 @@ class Composer:
 
     def _main_test(self):
         """ Generate some songs
+        The midi files will be saved on the same model_dir
         """
         assert self.sess
 
         print('Start predicting...')
-        pass
+
+        model_list = self._get_model_list()
+        if not model_list:
+            print('Warning: No model found in \'{}\'. Please train a model before trying to predict'.format(self.model_dir))
+            return
+
+        # Predicting for each model present in modelDir
+        for model_name in sorted(model_list):  # TODO: Natural sorting
+            print('Restoring previous model from {}'.format(model_name))
+            self.saver.restore(self.sess, model_name)
+            print('Generating songs...')
+            ops, feed_dict = self.model.step(None)
+            assert len(ops) == 1  # output
+            outputs = self.sess.run(ops[0], feed_dict)
+            # TODO: Save the output as image (hotmap red/blue to see the prediction confidence)
+
+            songs = self.music_data.convert_to_songs(outputs)
+            base_name = model_name[:-len(self.MODEL_EXT)]
+            for i, song in enumerate(songs):
+                MidiReader.write_song(song, base_name + '-' + str(i) + '.mid')
+            # TODO: Print song statistics
+
+        print('Prediction finished, {} songs generated'.format(self.args.batch_size * len(model_list)))
 
     def _restore_previous_model(self, sess):
         """ Restore or reset the model, depending of the parameters

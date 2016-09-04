@@ -294,4 +294,33 @@ class MusicData:
         
         # Use tf.train.batch() ??
 
+        # TODO: Save some batches as midi to see if correct
+
         return batches
+
+    def convert_to_songs(self, outputs):
+        """ Create songs from the decoder outputs.
+        Args:
+            outputs (List[np.array]): The list of the predictions of the decoder
+        Return:
+            List[Song]: the list of the songs (one song by batch)
+        """
+
+        # Step 1: Extract the batches and recreate the array for each batch
+        piano_rolls = []
+        for i in range(outputs[0].shape[0]):  # Iterate over the batches
+            piano_roll = None
+            for j in range(len(outputs)):  # Iterate over the sample length
+                # outputs[j][i, :] has shape [NB_NOTES, 1]
+                if piano_roll is None:
+                    piano_roll = [outputs[j][i, :]]
+                else:
+                    piano_roll = np.append(piano_roll, [outputs[j][i, :]], axis=0)
+            piano_rolls.append(piano_roll.T)
+
+        # Step 2: Create the song from the array
+        songs = []
+        for array in piano_rolls:
+            songs.append(self._convert_array2song(array))
+
+        return songs

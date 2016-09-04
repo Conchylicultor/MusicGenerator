@@ -21,6 +21,7 @@ Model to generate new songs
 """
 
 import tensorflow as tf
+import numpy as np  # For the testing mode (TODO: Delete)
 
 from deepmusic.musicdata import Batch
 import deepmusic.songstruct as music
@@ -94,7 +95,7 @@ class Model:
 
         initial_state = rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
 
-        def loop_rnn(prev, _):
+        def loop_rnn(prev, i):
             """ Loop function used to connect one output of the rnn to the next input.
             Will re-adapt the output shape to the input one.
             This is useful to use the same network for both training and testing. Warning: Because of the fixed
@@ -103,13 +104,18 @@ class Model:
             # TODO: Implement Samy Bengio training trick
             # TODO: Make the prediction for each note (with a scaled sigmoid: 2*sig - 1 = +/- 1
             if self.args.test:
-                return project_note(prev)
+                # Predict the output from prev and scale the result on [-1, 1]
+                out = project_note(prev)
+                out = tf.sub(tf.mul(2.0, tf.nn.sigmoid(out)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
+                return out
+            else:
+                return self.inputs[i]
 
         (outputs, self.final_state) = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=self.inputs,
             initial_state=initial_state,
             cell=rnn_cell,
-            #loop_function=loop_rnn
+            loop_function=loop_rnn  # TODO: WARNING!!! INCOMPATIBLE WITH MULTI RNN ??
         )
 
         # Final projection
@@ -170,9 +176,8 @@ class Model:
             ops = (self.opt_op,)
         else:  # Testing (batch_size == 1)
             # Feed placeholder
-            for i in range(self.args.sample_length):
-                feed_dict[self.inputs[i]] = batch.inputs[i]
-                # TODO: What to put for initialisation values (empty ? random ?) ? feed_dict[self.targets[0]] =
+            # TODO: What to put for initialisation state (empty ? random ?) ?
+            feed_dict[self.inputs[0]] = np.zeros([self.args.batch_size, music.NB_NOTES])
 
             ops = (self.outputs,)
 
