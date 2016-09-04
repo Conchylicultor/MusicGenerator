@@ -298,6 +298,30 @@ class MusicData:
 
         return batches
 
+    def get_batch_test(self):
+        """ Return an initial batch as initiator for the RNN
+        Only the initial position is defined
+        """
+        batch = Batch()
+
+        input = None
+        size_input = [music.NB_NOTES,]
+        for i in range(self.args.batch_size):
+            if i == 0:
+                input = [-np.ones(size_input)]  # No key pressed
+            elif i == 1:
+                input = np.append(input, [np.ones(size_input)], axis=0)  # All key pressed
+            elif i < 4:
+                input = np.append(input, [np.random.uniform(-1.0, 1.0, size=size_input)], axis=0)
+            elif i < 8:
+                input = np.append(input, [np.random.normal(size=size_input)], axis=0)
+            else:
+                input = np.append(input, [np.random.normal(-0.5, size=size_input)], axis=0)
+
+        batch.inputs.append(input)
+
+        return batch
+
     def convert_to_songs(self, outputs):
         """ Create songs from the decoder outputs.
         Args:

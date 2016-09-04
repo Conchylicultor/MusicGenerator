@@ -149,7 +149,7 @@ class Composer:
             self.model = Model(self.args)
 
         # Saver/summaries
-        self.writer = tf.train.SummaryWriter(self.model_dir)
+        self.writer = tf.train.SummaryWriter(self.model_dir)  # TODO: Write graph for testing too (RNN change)
         self.saver = tf.train.Saver(max_to_keep=200)  # Arbitrary limit ?
 
         # TODO: Fixed seed (WARNING: If dataset shuffling, make sure to do that after saving the
@@ -241,11 +241,11 @@ class Composer:
             return
 
         # Predicting for each model present in modelDir
-        for model_name in sorted(model_list):  # TODO: Natural sorting
-            print('Restoring previous model from {}'.format(model_name))
+        for model_name in tqdm(sorted(model_list), desc='Generating'):  # TODO: Natural sorting
+            tqdm.write('Restoring previous model from {}'.format(model_name))  # TODO: Better tqdm display
             self.saver.restore(self.sess, model_name)
-            print('Generating songs...')
-            ops, feed_dict = self.model.step(None)
+            tqdm.write('Generating songs...')
+            ops, feed_dict = self.model.step(self.music_data.get_batch_test())
             assert len(ops) == 1  # output
             outputs = self.sess.run(ops[0], feed_dict)
             # TODO: Save the output as image (hotmap red/blue to see the prediction confidence)
@@ -254,7 +254,7 @@ class Composer:
             base_name = model_name[:-len(self.MODEL_EXT)]
             for i, song in enumerate(songs):
                 MidiReader.write_song(song, base_name + '-' + str(i) + '.mid')
-            # TODO: Print song statistics
+            # TODO: Print song statistics (nb of generated notes,...)
 
         print('Prediction finished, {} songs generated'.format(self.args.batch_size * len(model_list)))
 

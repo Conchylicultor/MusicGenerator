@@ -21,7 +21,6 @@ Model to generate new songs
 """
 
 import tensorflow as tf
-import numpy as np  # For the testing mode (TODO: Delete)
 
 from deepmusic.musicdata import Batch
 import deepmusic.songstruct as music
@@ -29,7 +28,7 @@ import deepmusic.songstruct as music
 
 class Model:
     """
-    Base class which manage the different models and experimentations.
+    Base class which manage the different models and experimentation.
     """
     
     def __init__(self, args):
@@ -72,7 +71,7 @@ class Model:
                 ]
 
         # Projection
-        with tf.name_scope('projection'):  # Probably useless ??
+        with tf.variable_scope('note_projection'):  # TODO: Make sure reuse is True
             W = tf.get_variable(
                 'weights',
                 [self.args.hidden_size, music.NB_NOTES],
@@ -88,7 +87,7 @@ class Model:
                 return tf.matmul(X, W) + b  # [batch_size, NB_NOTE]
 
         # RNN network
-        with tf.name_scope('rnn_cell'):  # TODO: How to make this appear on the graph ?
+        with tf.variable_scope('rnn_cell'):  # TODO: How to make this appear on the graph ?
             rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
             #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!)
             rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
@@ -119,7 +118,7 @@ class Model:
         )
 
         # Final projection
-        with tf.name_scope('note_proj'):
+        with tf.name_scope('final_output'):
             self.outputs = []
             for output in outputs:
                 proj = project_note(output)
@@ -177,7 +176,7 @@ class Model:
         else:  # Testing (batch_size == 1)
             # Feed placeholder
             # TODO: What to put for initialisation state (empty ? random ?) ?
-            feed_dict[self.inputs[0]] = np.zeros([self.args.batch_size, music.NB_NOTES])
+            feed_dict[self.inputs[0]] = batch.inputs[0]
 
             ops = (self.outputs,)
 
