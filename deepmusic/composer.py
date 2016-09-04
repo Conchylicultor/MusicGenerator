@@ -154,7 +154,7 @@ class Composer:
         # TODO: Fixed seed (WARNING: If dataset shuffling, make sure to do that after saving the
         # dataset, otherwise, all what comes after the shuffling won't be replicable when
         # reloading the dataset). How to restore the seed after loading ??
-        # Also fix seed for random.shuffle (does it works globally for all files ?)
+        # Also fix seed for np.random (does it works globally for all files ?)
 
         # Running session
 

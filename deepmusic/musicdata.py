@@ -22,7 +22,6 @@ Loads the midi song, build the dataset
 from tqdm import tqdm  # Progress bar when creating dataset
 import pickle  # Saving the data
 import os  # Checking file existence
-import random  # When shuffling
 import numpy as np  # Batch data
 # TODO: import cv2  # Plot the piano roll
 
@@ -99,7 +98,7 @@ class MusicData:
             self._create_samples()
 
             print('Saving dataset...')
-            # TODO: Change: self._save_samples(samples_path)
+            self._save_samples(samples_path)
 
     def _restore_samples(self, samples_path):
         """ Load samples from file
@@ -150,9 +149,6 @@ class MusicData:
             else:
                 self.songs.append(self._convert_song2array(new_song))
 
-                new_song = self._convert_array2song(self.songs[-1])  # TODO: TEST ONLY
-                MidiReader.write_song(new_song, filename+'_test.mid')  # TODO: TEST ONLY
-
         if not self.songs:
             raise ValueError('Empty dataset. Check that the folder exist and contains supported midi files.')
 
@@ -167,27 +163,23 @@ class MusicData:
         Args:
             song (Song): The song to convert
         Return:
-            Array: the numpy array
+            Array: the numpy array: a binary matrix of shape [NB_NOTES, song_length]
         """
 
         # Convert the absolute ticks in standardized unit
         song_length = len(song)
         scale = self._get_scale(song)
 
-        print(scale)
-        print(song.ticks_per_beat)
-        print(song_length)
-        print(song_length/scale)
-        print(song_length//scale)
+        # TODO: Not sure why this plot a decimal value (x.66). Investigate...
+        # print(song_length/scale)
 
         # Use sparse array instead ?
-        piano_roll = np.zeros([music.NB_NOTES, np.ceil(song_length/scale)], dtype=float)
+        piano_roll = np.zeros([music.NB_NOTES, int(np.ceil(song_length/scale))], dtype=int)
 
         # Adding all notes
         for track in song.tracks:
             for note in track.notes:
-                #print(note.tick/scale, note.tick//scale, 'Note added on {},{}'.format(note.get_relative_note(),note.tick//scale))
-                piano_roll[note.get_relative_note()][note.tick//scale] = 1.0
+                piano_roll[note.get_relative_note()][note.tick//scale] = 1
 
         return piano_roll
 
@@ -198,7 +190,7 @@ class MusicData:
         For now, the changes of tempo are ignored. Only 4/4 is supported.
         Warning: All note have the same duration, the default value defined in music.Note
         Args:
-            np.Array: the numpy array
+            np.array: the numpy array (Warning: could be a array of int or float containing the prediction before the sigmoid)
         Return:
             song (Song): The song to convert
         """
@@ -209,7 +201,7 @@ class MusicData:
         scale = self._get_scale(new_song)
 
         for index, x in np.ndenumerate(array):  # Add some notes
-            if x > 0 + 1e-12:  # Note added (TODO: What should be the condition, =1 ? sigmoid>0.5 ?)
+            if x > 1e-12:  # Note added (TODO: What should be the condition, =1 ? sigmoid>0.5 ?)
                 new_note = music.Note()
 
                 new_note.set_relative_note(index[0])
@@ -224,14 +216,16 @@ class MusicData:
     def _get_scale(self, song):
         """ Compute the unit scale factor for the given song
         The scale factor allow to have a tempo independent time unit, to represent the song as an array
-        of dimension [key, time_unit]
+        of dimension [key, time_unit]. Once computed, one has just to divide (//) the ticks or multiply
+        the time units to go from one representation to the other.
+
+        Args:
+            song (Song): a song object from which will be extracted the tempo information
         Return:
             int: the scale factor for the current song
         """
-        # TODO: doc:
-        # Using scale: time_unit = abs_ticks//scale
 
-        # TODO: Assert that the scale factor is not a float (and replace // by /)
+        # TODO: Assert that the scale factor is not a float (the % =0)
         return 4 * song.ticks_per_beat // (self.MAXIMUM_SONG_RESOLUTION*self.NOTES_PER_BAR)
 
     def get_batches(self):
@@ -239,14 +233,64 @@ class MusicData:
         Return:
             List[Batch]: Get a list of the batches for the next epoch
         """
-        print("Shuffling the dataset...")
-        random.shuffle(self.songs)  # TODO: Segment the songs ?
-        
         batches = []
 
         # TODO: Create batches (randomly cut each song in some small parts (need to know the total length for that)
         # then create the big matrix (NB_NOTE*sample_length) and turn that into batch). If process too long,
         # could save the created batches in a new folder, data/samples or save/model.
+
+        # First part: Randomly extract subsamples of the songs
+        print("Subsampling songs...")
+
+        # TODO: Define as self.args (or dynamically determine with the song length)
+        NB_SAMPLE_SONG = 300
+        sample_subsampling_length = self.args.sample_length+1  # We add 1 because each input has to predict the next output
+
+        sub_songs = []
+        for song in self.songs:
+            len_song = song.shape[-1]  # The last dimension correspond to the song duration
+            max_start = len_song - sample_subsampling_length
+            assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
+            for _ in range(NB_SAMPLE_SONG):
+                start = np.random.randint(max_start)
+                sub_song = song[:, start:start+sample_subsampling_length]
+                sub_songs.append(sub_song)
+
+        # Second part: Shuffle the song extracts
+        print("Shuffling the dataset...")
+        np.random.shuffle(sub_songs)
+
+        # Third part: Group the samples together to create the batches
+        print("Generating batches...")
+
+        def gen_next_samples():
+            """ Generator over the mini-batch training samples
+            Warning: the last samples will be ignored if the number of batch does not match the number of samples
+            """
+            nb_samples = len(sub_songs)
+            for i in range(nb_samples//self.args.batch_size):
+                yield sub_songs[i*self.args.batch_size:(i+1)*self.args.batch_size]
+
+        for samples in gen_next_samples():
+            batch = Batch()
+
+            # samples has shape [batch_size, NB_NOTES, sample_subsampling_length]
+            assert len(samples) == self.args.batch_size
+            assert samples[0].shape == (music.NB_NOTES, sample_subsampling_length)
+
+            # Define targets and inputs
+            for i in range(self.args.sample_length):
+                input = -np.ones([len(samples), music.NB_NOTES])
+                target = np.zeros([len(samples), music.NB_NOTES])
+                for j, sample in enumerate(samples):  # len(samples) == self.args.batch_size
+                    # TODO: Could reuse boolean idx computed (from target to next input)
+                    input[j, sample[:, i] == 1] = 1.0
+                    target[j, sample[:, i+1] == 1] = 1.0
+
+                batch.inputs.append(input)
+                batch.targets.append(target)
+
+            batches.append(batch)
         
         # Use tf.train.batch() ??
 

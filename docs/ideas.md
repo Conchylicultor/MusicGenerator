@@ -24,7 +24,7 @@ What note representation ?
 
 
 
-Train conjointly récurent CNN  for the spacial dependency (use lstm containing a CNN ?) AND a standard RNN for the absolute position (best of both words ?) At the end a fully connected layer mix the two outputs to produce the final result: the CNN provide the pattern and the standard network provider the position (use simple res net)
+Train conjointly recurrent CNN  for the spacial dependency (use lstm containing a CNN ?) AND a standard RNN for the absolute position (best of both words ?) At the end a fully connected layer mix the two outputs to produce the final result: the CNN provide the pattern and the standard network provider the position (use simple res net)
 
 Look at deconvolution
 ResNet
@@ -45,10 +45,11 @@ Walkthrough:
 What cost fct ?
 
 Eventually, the penalty should be less if the network predict the same note but not in the right pitch (ex: C4 instead of C5), with a decay the further the prediction is (D5 and D1 more penalized than D4 and D3 if the target is D2)
+A first simple solution could be to try to optimize 2 task conjointly (the binary classification on all keyboards key and one on the notes % 12). Pb is: How to compute the prediction for the %12 from the global keyboard prediction ? A simple way could be to simply add the prediction of each note (P(C)=sigm(C1 + C2 + C3 +...))
 
 
 ## Tools
 
 Some python library for midi file manipulation
 * Mido: seems the best one now for low level manipulation. Close the the original specs.
-* pretty_midi: higher level (piano rolls function could be really handy)
+* pretty_midi: higher level (piano rolls function could be really handy). Not python 3 compatible

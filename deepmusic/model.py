@@ -70,24 +70,8 @@ class Model:
                     [self.args.batch_size, music.NB_NOTES], name='target') for _ in range(self.args.sample_length)
                 ]
 
-        # RNN network
-        with tf.name_scope('rnn_cell'):  # TODO: How to make this appear on the graph ?
-            rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
-            #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!)
-            rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
-
-        initial_state = rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
-
-        (outputs, self.final_state) = tf.nn.seq2seq.rnn_decoder(
-            decoder_inputs=self.inputs,
-            initial_state=initial_state,
-            cell=rnn_cell
-            # TODO: Use loop_function to use the Samy Bengio training trick (also useful to have a single network for
-            # both training and testing and re-adapt the output size to the input)
-        )
-
-        # Final projection
-        with tf.name_scope('note_proj'):
+        # Projection
+        with tf.name_scope('projection'):  # Probably useless ??
             W = tf.get_variable(
                 'weights',
                 [self.args.hidden_size, music.NB_NOTES],
@@ -102,6 +86,34 @@ class Model:
             def project_note(X):
                 return tf.matmul(X, W) + b  # [batch_size, NB_NOTE]
 
+        # RNN network
+        with tf.name_scope('rnn_cell'):  # TODO: How to make this appear on the graph ?
+            rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
+            #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!)
+            rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
+
+        initial_state = rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
+
+        def loop_rnn(prev, _):
+            """ Loop function used to connect one output of the rnn to the next input.
+            Will re-adapt the output shape to the input one.
+            This is useful to use the same network for both training and testing. Warning: Because of the fixed
+            batch size, we have to predict batch_size sequences when testing.
+            """
+            # TODO: Implement Samy Bengio training trick
+            # TODO: Make the prediction for each note (with a scaled sigmoid: 2*sig - 1 = +/- 1
+            if self.args.test:
+                return project_note(prev)
+
+        (outputs, self.final_state) = tf.nn.seq2seq.rnn_decoder(
+            decoder_inputs=self.inputs,
+            initial_state=initial_state,
+            cell=rnn_cell,
+            #loop_function=loop_rnn
+        )
+
+        # Final projection
+        with tf.name_scope('note_proj'):
             self.outputs = []
             for output in outputs:
                 proj = project_note(output)
@@ -119,7 +131,7 @@ class Model:
             # For now, by using sigmoid_cross_entropy_with_logits, the task is formulated as a NB_NOTES binary
             # classification problems
 
-            loss_fct = tf.nn.seq2seq.sequence_loss_by_example(  # Or just sequence_loss ??
+            loss_fct = tf.nn.seq2seq.sequence_loss(  # Or sequence_loss_by_example ??
                 self.outputs,
                 self.targets,
                 [tf.ones(self.targets[0].get_shape()) for _ in range(len(self.targets))],  # Weights
