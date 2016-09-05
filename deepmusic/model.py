@@ -30,6 +30,44 @@ class Model:
     """
     Base class which manage the different models and experimentation.
     """
+
+    class TargetWeightsPolicy:
+        """ Structure to represent the different policy for choosing the target weights
+        This is used to scale the contribution of each timestep to the global loss
+        """
+        NONE = 'none'  # All weights equals (=1.0) (default behavior)
+        LINEAR = 'linear'  # The first outputs are less penalized than the last ones
+        STEP = 'step'  # We start penalizing only after self.args.target_weight_step
+
+        def __init__(self, args):
+            """
+            Args:
+                args: parameters of the model
+            """
+            self.args = args
+
+        def get_weight(self, i):
+            """ Return the target weight for the given step i using the chosen policy
+            """
+            if not self.args.target_weights or self.args.target_weights == Model.TargetWeightsPolicy.NONE:
+                return 1.0
+            elif self.args.target_weights == Model.TargetWeightsPolicy.LINEAR:
+                return i / (self.args.sample_length - 1)  # Gradually increment the loss weight
+            elif self.args.target_weights == Model.TargetWeightsPolicy.STEP:
+                raise NotImplementedError('Step target weight policy not implemented yet, please consider another policy')
+            else:
+                raise ValueError('Unknown chosen target weight policy: {}'.format(self.args.target_weights))
+
+        @staticmethod
+        def get_policies():
+            """ Return the list of the different modes
+            Useful when parsing the command lines arguments
+            """
+            return [
+                Model.TargetWeightsPolicy.NONE,
+                Model.TargetWeightsPolicy.LINEAR,
+                Model.TargetWeightsPolicy.STEP
+            ]
     
     def __init__(self, args):
         """
@@ -122,7 +160,7 @@ class Model:
             decoder_inputs=self.inputs,
             initial_state=initial_state,
             cell=rnn_cell,
-            loop_function=loop_rnn  # TODO: WARNING!!! Check the graph, looks strange ??
+            loop_function=loop_rnn
         )
 
         # Final projection
@@ -144,10 +182,12 @@ class Model:
             # For now, by using sigmoid_cross_entropy_with_logits, the task is formulated as a NB_NOTES binary
             # classification problems
 
+            target_weights_policy = Model.TargetWeightsPolicy(self.args)  # Load the chosen policy
+
             loss_fct = tf.nn.seq2seq.sequence_loss(  # Or sequence_loss_by_example ??
                 self.outputs,
                 self.targets,
-                [tf.ones(self.targets[0].get_shape()) for _ in range(len(self.targets))],  # Weights
+                [tf.constant(target_weights_policy.get_weight(i), shape=self.targets[0].get_shape()) for i in range(len(self.targets))],  # Weights
                 softmax_loss_function=tf.nn.sigmoid_cross_entropy_with_logits
             )
             tf.scalar_summary('training_loss', loss_fct)  # Keep track of the cost

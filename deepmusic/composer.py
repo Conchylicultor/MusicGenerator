@@ -119,6 +119,7 @@ class Composer:
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
         training_args.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
         training_args.add_argument('--sample_length', type=int, default=40, help='The number of beats of a training sentence')  # Warning: What is the real unit quarter note ? compressed tick ?
+        training_args.add_argument('--target_weights', nargs='?', choices=Model.TargetWeightsPolicy.get_policies(), default=None, help='policy to choose the loss contribution of each step')
 
         return parser.parse_args(args)
 
@@ -380,11 +381,12 @@ class Composer:
         config['Network']['hidden_size'] = str(self.args.hidden_size)
         config['Network']['num_layers'] = str(self.args.num_layers)
         
-        # Keep track of the learning params (but without restoring them)
+        # Keep track of the learning params  # TODO: Restore them (the user has still the possibility to manually edit the file if he want something change !!!)
         config['Training (won\'t be restored)'] = {}
         config['Training (won\'t be restored)']['learning_rate'] = str(self.args.learning_rate)
         config['Training (won\'t be restored)']['batch_size'] = str(self.args.batch_size)
         config['Training (won\'t be restored)']['sample_length'] = str(self.args.sample_length)
+        config['Training (won\'t be restored)']['target_weights'] = str(self.args.target_weights)
 
         with open(os.path.join(self.model_dir, self.CONFIG_FILENAME), 'w') as config_file:
             config.write(config_file)
