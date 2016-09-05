@@ -111,6 +111,8 @@ class Composer:
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
         nn_args.add_argument('--hidden_size', type=int, default=256, help='Size of one neural network layer')
         nn_args.add_argument('--num_layers', type=int, default=2, help='Nb of layers of the RNN')
+        nn_args.add_argument('--target_weights', nargs='?', choices=Model.TargetWeightsPolicy.get_policies(), default=Model.TargetWeightsPolicy.NONE,
+                             help='policy to choose the loss contribution of each step')
 
         # Training options (Warning: if modifying something here, also make the change on save/restore_params() )
         training_args = parser.add_argument_group('Training options')
@@ -119,7 +121,6 @@ class Composer:
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
         training_args.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
         training_args.add_argument('--sample_length', type=int, default=40, help='The number of beats of a training sentence')  # Warning: What is the real unit quarter note ? compressed tick ?
-        training_args.add_argument('--target_weights', nargs='?', choices=Model.TargetWeightsPolicy.get_policies(), default=None, help='policy to choose the loss contribution of each step')
 
         return parser.parse_args(args)
 
@@ -350,17 +351,33 @@ class Composer:
 
             # Restoring the the parameters
             self.glob_step = config['General'].getint('glob_step')
+            self.args.keep_all = config['General'].getboolean('keep_all')
+            self.args.dataset_tag = config['General'].get('dataset_tag')
+
             self.args.hidden_size = config['Network'].getint('hidden_size')
             self.args.num_layers = config['Network'].getint('num_layers')
+            self.args.target_weights = config['Network'].get('target_weights')
 
-            # No restoring for training params, batch size or other non model dependent parameters
+            self.args.learning_rate = config['Training'].getfloat('learning_rate')
+            self.args.batch_size = config['Training'].getint('batch_size')
+            self.args.save_every = config['Training'].getint('save_every')
+            self.args.sample_length = config['Training'].getint('sample_length')
 
             # Show the restored params
             print()
-            print('Warning: Restoring parameters:')
+            print('Warning: Restoring parameters (you should manually edit the file if you want one of those changed):')
             print('glob_step: {}'.format(self.glob_step))
+            print('keep_all: {}'.format(self.args.keep_all))
+            print('dataset_tag: {}'.format(self.args.dataset_tag))
+
             print('hidden_size: {}'.format(self.args.hidden_size))
             print('num_layers: {}'.format(self.args.num_layers))
+            print('target_weights: {}'.format(self.args.target_weights))
+
+            print('learning_rate: {}'.format(self.args.learning_rate))
+            print('batch_size: {}'.format(self.args.batch_size))
+            print('save_every: {}'.format(self.args.save_every))
+            print('sample_length: {}'.format(self.args.sample_length))
             print()
 
         # When testing, only predict one song at the time
@@ -375,18 +392,20 @@ class Composer:
         config['General'] = {}
         config['General']['version'] = self.CONFIG_VERSION
         config['General']['glob_step'] = str(self.glob_step)
-        config['General']['dataset_tag'] = self.args.dataset_tag  # Just an indication, won't be restored
+        config['General']['keep_all'] = str(self.args.keep_all)
+        config['General']['dataset_tag'] = self.args.dataset_tag
 
         config['Network'] = {}
         config['Network']['hidden_size'] = str(self.args.hidden_size)
         config['Network']['num_layers'] = str(self.args.num_layers)
+        config['Network']['target_weights'] = self.args.target_weights  # Could be modified manually
         
-        # Keep track of the learning params  # TODO: Restore them (the user has still the possibility to manually edit the file if he want something change !!!)
-        config['Training (won\'t be restored)'] = {}
-        config['Training (won\'t be restored)']['learning_rate'] = str(self.args.learning_rate)
-        config['Training (won\'t be restored)']['batch_size'] = str(self.args.batch_size)
-        config['Training (won\'t be restored)']['sample_length'] = str(self.args.sample_length)
-        config['Training (won\'t be restored)']['target_weights'] = str(self.args.target_weights)
+        # Keep track of the learning params (are not model dependent so can be manually edited)
+        config['Training'] = {}
+        config['Training']['learning_rate'] = str(self.args.learning_rate)
+        config['Training']['batch_size'] = str(self.args.batch_size)
+        config['Training']['save_every'] = str(self.args.save_every)
+        config['Training']['sample_length'] = str(self.args.sample_length)
 
         with open(os.path.join(self.model_dir, self.CONFIG_FILENAME), 'w') as config_file:
             config.write(config_file)
