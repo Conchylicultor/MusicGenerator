@@ -43,6 +43,7 @@ class Model:
         # Placeholders
         self.inputs = None
         self.targets = None
+        self.use_prev = None  # Boolean tensor which say at Graph evaluation time if we use the input placeholder or the previous output.
 
         # Main operators
         self.opt_op = None  # Optimizer
@@ -61,17 +62,29 @@ class Model:
             self.inputs = [
                 tf.placeholder(
                     tf.float32,  # -1.0/1.0 ? Probably better for the sigmoid
-                    [self.args.batch_size, music.NB_NOTES], name='input') for _ in range(self.args.sample_length)
+                    [self.args.batch_size, music.NB_NOTES],
+                    name='input')
+                for _ in range(self.args.sample_length)
                 ]
         with tf.name_scope('placeholder_targets'):
             self.targets = [
                 tf.placeholder(
                     tf.float32,  # 0/1
-                    [self.args.batch_size, music.NB_NOTES], name='target') for _ in range(self.args.sample_length)
+                    [self.args.batch_size, music.NB_NOTES],
+                    name='target')
+                for _ in range(self.args.sample_length)
+                ]
+        with tf.name_scope('placeholder_use_prev'):
+            self.use_prev = [
+                tf.placeholder(
+                    tf.bool,
+                    [],
+                    name='use_prev')
+                for _ in range(self.args.sample_length)
                 ]
 
-        # Projection
-        with tf.name_scope('note_projection'):
+        # Projection on the keyboard
+        with tf.name_scope('note_projection_weights'):
             W = tf.Variable(
                 tf.truncated_normal([self.args.hidden_size, music.NB_NOTES]),
                 name='weights'
@@ -81,14 +94,14 @@ class Model:
                 name='bias',
             )
 
-            def project_note(X):
+        def project_note(X):
+            with tf.name_scope('note_projection'):
                 return tf.matmul(X, W) + b  # [batch_size, NB_NOTE]
 
         # RNN network
-        with tf.name_scope('rnn_cell'):  # TODO: How to make this appear on the graph ?
-            rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
-            #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!)
-            rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
+        rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
+        #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!, possible to use placeholder ?)
+        rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
 
         initial_state = rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
 
@@ -98,15 +111,12 @@ class Model:
             This is useful to use the same network for both training and testing. Warning: Because of the fixed
             batch size, we have to predict batch_size sequences when testing.
             """
-            # TODO: Implement Samy Bengio training trick
-            # TODO: Make the prediction for each note (with a scaled sigmoid: 2*sig - 1 = +/- 1
-            if self.args.test:
-                # Predict the output from prev and scale the result on [-1, 1]
-                out = project_note(prev)
-                out = tf.sub(tf.mul(2.0, tf.nn.sigmoid(out)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
-                return out
-            else:
-                return self.inputs[i]
+            # Predict the output from prev and scale the result on [-1, 1]
+            next_input = project_note(prev)
+            next_input = tf.sub(tf.mul(2.0, tf.nn.sigmoid(next_input)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
+
+            # On training, we force the correct input, on testing, we use the previous output as next input
+            return tf.cond(self.use_prev[i-1], lambda: next_input, lambda: self.inputs[i])
 
         (outputs, self.final_state) = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=self.inputs,
@@ -163,6 +173,15 @@ class Model:
         # Feed the dictionary
         feed_dict = {}
         ops = None
+
+        # Feed placeholder
+        for i in range(self.args.sample_length-1):
+            # TODO: S. Bengio trick and variables input size
+            # TODO: Variable length testing samples
+            if not self.args.test:
+                feed_dict[self.use_prev[i]] = False
+            else:
+                feed_dict[self.use_prev[i]] = True
 
         if not self.args.test:  # Training
             # Feed placeholder

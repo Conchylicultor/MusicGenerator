@@ -242,8 +242,6 @@ class MusicData:
         # First part: Randomly extract subsamples of the songs
         print("Subsampling songs...")
 
-        # TODO: Define as self.args (or dynamically determine with the song length)
-        NB_SAMPLE_SONG = 300
         sample_subsampling_length = self.args.sample_length+1  # We add 1 because each input has to predict the next output
 
         sub_songs = []
@@ -251,7 +249,8 @@ class MusicData:
             len_song = song.shape[-1]  # The last dimension correspond to the song duration
             max_start = len_song - sample_subsampling_length
             assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
-            for _ in range(NB_SAMPLE_SONG):
+            nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length
+            for _ in range(nb_sample_song):
                 start = np.random.randint(max_start)
                 sub_song = song[:, start:start+sample_subsampling_length]
                 sub_songs.append(sub_song)

@@ -149,7 +149,7 @@ class Composer:
             self.model = Model(self.args)
 
         # Saver/summaries
-        self.writer = tf.train.SummaryWriter(self.model_dir)  # TODO: Write graph for testing too (RNN change)
+        self.writer = tf.train.SummaryWriter(self.model_dir)
         self.saver = tf.train.Saver(max_to_keep=200)  # Arbitrary limit ?
 
         # TODO: Fixed seed (WARNING: If dataset shuffling, make sure to do that after saving the
