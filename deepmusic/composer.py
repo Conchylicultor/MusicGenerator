@@ -232,6 +232,7 @@ class Composer:
         The midi files will be saved on the same model_dir
         """
         assert self.sess
+        assert self.args.batch_size == 1
 
         print('Start predicting...')
 
@@ -240,23 +241,29 @@ class Composer:
             print('Warning: No model found in \'{}\'. Please train a model before trying to predict'.format(self.model_dir))
             return
 
+        batches, names = self.music_data.get_batches_test()
+
         # Predicting for each model present in modelDir
-        for model_name in tqdm(sorted(model_list), desc='Generating'):  # TODO: Natural sorting
-            tqdm.write('Restoring previous model from {}'.format(model_name))  # TODO: Better tqdm display
+        for model_name in sorted(model_list):  # TODO: Natural sorting
+            tqdm.write('Restoring previous model from {}'.format(model_name))
             self.saver.restore(self.sess, model_name)
-            tqdm.write('Generating songs...')
-            ops, feed_dict = self.model.step(self.music_data.get_batch_test())
-            assert len(ops) == 1  # output
-            outputs = self.sess.run(ops[0], feed_dict)
-            # TODO: Save the output as image (hotmap red/blue to see the prediction confidence)
 
-            songs = self.music_data.convert_to_songs(outputs)
-            base_name = model_name[:-len(self.MODEL_EXT)]
-            for i, song in enumerate(songs):
-                MidiReader.write_song(song, base_name + '-' + str(i) + '.mid')
-            # TODO: Print song statistics (nb of generated notes,...)
+            for next_sample in tqdm(zip(batches, names), desc="Generating"):
+                batch = next_sample[0]
+                name = next_sample[1]  # Unzip
 
-        print('Prediction finished, {} songs generated'.format(self.args.batch_size * len(model_list)))
+                ops, feed_dict = self.model.step(batch)
+                assert len(ops) == 1  # output
+                outputs = self.sess.run(ops[0], feed_dict)
+                # TODO: Save the output as image (hotmap red/blue to see the prediction confidence)
+
+                songs = self.music_data.convert_to_songs(outputs)
+                base_name = model_name[:-len(self.MODEL_EXT)]
+                for i, song in enumerate(songs):
+                    MidiReader.write_song(song, base_name + '-' + str(i) + '-' + name + '.mid')
+                # TODO: Print song statistics (nb of generated notes,...)
+
+        print('Prediction finished, {} songs generated'.format(self.args.batch_size * len(model_list) * len(batches)))
 
     def _restore_previous_model(self, sess):
         """ Restore or reset the model, depending of the parameters
@@ -355,6 +362,10 @@ class Composer:
             print('num_layers: {}'.format(self.args.num_layers))
             print()
 
+        # When testing, only predict one song at the time
+        if self.args.test:
+            self.args.batch_size = 1
+
     def _save_params(self):
         """ Save the params of the model, like the current glob_step value
         Warning: if you modify this function, make sure the changes mirror load_params
@@ -363,6 +374,7 @@ class Composer:
         config['General'] = {}
         config['General']['version'] = self.CONFIG_VERSION
         config['General']['glob_step'] = str(self.glob_step)
+        config['General']['dataset_tag'] = self.args.dataset_tag  # Just an indication, won't be restored
 
         config['Network'] = {}
         config['Network']['hidden_size'] = str(self.args.hidden_size)

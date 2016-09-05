@@ -23,6 +23,7 @@ from tqdm import tqdm  # Progress bar when creating dataset
 import pickle  # Saving the data
 import os  # Checking file existence
 import numpy as np  # Batch data
+import json
 # TODO: import cv2  # Plot the piano roll
 
 from deepmusic.midireader import MidiReader
@@ -53,6 +54,7 @@ class MusicData:
         self.DATA_DIR_MIDI = 'data/midi'  # Originals midi files
         self.DATA_DIR_SAMPLES = 'data/samples'  # Training/testing samples after pre-processing
         self.DATA_SAMPLES_EXT = '.pkl'
+        self.TEST_INIT_FILE = 'data/test/initiator.json'  # Initial input for the generated songs
         self.FILE_EXT = '.mid'  # Could eventually add support for other format later ?
 
         # Define the time unit
@@ -297,29 +299,50 @@ class MusicData:
 
         return batches
 
-    def get_batch_test(self):
-        """ Return an initial batch as initiator for the RNN
-        Only the initial position is defined
+    def get_batches_test(self):
+        """ Return the batches which initiate the RNN when generating
+        The initial batches are loaded from a json file containing the first notes of the song. The note values
+        are the standard midi ones. Here is an examples of an initiator file:
+
+        ```
+        {"initiator":[
+            {"name":"Simple_C4",
+             "seq":[
+                {"notes":[60]}
+            ]},
+            {"name":"some_chords",
+             "seq":[
+                {"notes":[60,64]}
+                {"notes":[66,68,71]}
+                {"notes":[60,64]}
+            ]}
+        ]}
+        ```
+
+        Return:
+            List[Batch], List[str]: The generated batches with the associated names
         """
-        batch = Batch()
+        assert self.args.batch_size == 1
 
-        input = None
-        size_input = [music.NB_NOTES,]
-        for i in range(self.args.batch_size):
-            if i == 0:
-                input = [-np.ones(size_input)]  # No key pressed
-            elif i == 1:
-                input = np.append(input, [np.ones(size_input)], axis=0)  # All key pressed
-            elif i < 4:
-                input = np.append(input, [np.random.uniform(-1.0, 1.0, size=size_input)], axis=0)
-            elif i < 8:
-                input = np.append(input, [np.random.normal(size=size_input)], axis=0)
-            else:
-                input = np.append(input, [np.random.normal(-0.5, size=size_input)], axis=0)
+        batches = []
+        names = []
 
-        batch.inputs.append(input)
+        with open(self.TEST_INIT_FILE) as init_file:
+            initiators = json.load(init_file)
 
-        return batch
+        for initiator in initiators['initiator']:
+            batch = Batch()
+
+            for seq in initiator['seq']:  # We add a few notes
+                new_input = -np.ones([self.args.batch_size, music.NB_NOTES])  # No notes played by default
+                for note in seq['notes']:
+                    new_input[0, note] = 1.0
+                batch.inputs.append(new_input)
+
+            names.append(initiator['name'])
+            batches.append(batch)
+
+        return batches, names
 
     def convert_to_songs(self, outputs):
         """ Create songs from the decoder outputs.

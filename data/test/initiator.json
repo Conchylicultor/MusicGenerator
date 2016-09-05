@@ -1,0 +1,30 @@
+{"initiator":[
+    {"name":"An_empty_song",
+     "seq":[
+        {"notes":[]}
+    ]},
+    {"name":"C4",
+     "seq":[
+        {"notes":[60]}
+    ]},
+    {"name":"Do_re_mi",
+     "seq":[
+        {"notes":[60]},
+        {"notes":[62]},
+        {"notes":[64]}
+    ]},
+    {"name":"Chromatic",
+     "seq":[
+        {"notes":[60]},
+        {"notes":[61]},
+        {"notes":[62]}
+    ]},
+    {"name":"C_major",
+     "seq":[
+        {"notes":[60, 64, 67]}
+    ]},
+    {"name":"C_minor",
+     "seq":[
+        {"notes":[60, 63, 67]}
+    ]}
+]}

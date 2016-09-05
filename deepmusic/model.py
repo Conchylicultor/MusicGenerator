@@ -80,7 +80,7 @@ class Model:
                     tf.bool,
                     [],
                     name='use_prev')
-                for _ in range(self.args.sample_length)
+                for _ in range(self.args.sample_length)  # The first value will never be used (always takes self.input for the first step)
                 ]
 
         # Projection on the keyboard
@@ -116,7 +116,7 @@ class Model:
             next_input = tf.sub(tf.mul(2.0, tf.nn.sigmoid(next_input)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
 
             # On training, we force the correct input, on testing, we use the previous output as next input
-            return tf.cond(self.use_prev[i-1], lambda: next_input, lambda: self.inputs[i])
+            return tf.cond(self.use_prev[i], lambda: next_input, lambda: self.inputs[i])
 
         (outputs, self.final_state) = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=self.inputs,
@@ -174,26 +174,26 @@ class Model:
         feed_dict = {}
         ops = None
 
-        # Feed placeholder
-        for i in range(self.args.sample_length-1):
-            # TODO: S. Bengio trick and variables input size
-            # TODO: Variable length testing samples
-            if not self.args.test:
-                feed_dict[self.use_prev[i]] = False
-            else:
-                feed_dict[self.use_prev[i]] = True
-
         if not self.args.test:  # Training
             # Feed placeholder
             for i in range(self.args.sample_length):
                 feed_dict[self.inputs[i]] = batch.inputs[i]
                 feed_dict[self.targets[i]] = batch.targets[i]
+                # TODO: S. Bengio trick
+                feed_dict[self.use_prev[i]] = False
 
             ops = (self.opt_op,)
         else:  # Testing (batch_size == 1)
             # Feed placeholder
             # TODO: What to put for initialisation state (empty ? random ?) ?
-            feed_dict[self.inputs[0]] = batch.inputs[0]
+            # TODO: Modify use_prev
+            for i in range(self.args.sample_length):
+                if i < len(batch.inputs):
+                    feed_dict[self.inputs[i]] = batch.inputs[i]
+                    feed_dict[self.use_prev[i]] = False
+                else:  # Even not used, we still need to feed a placeholder
+                    feed_dict[self.inputs[i]] = batch.inputs[0]  # Could be anything but we need it to be of the right shape
+                    feed_dict[self.use_prev[i]] = True  # When we don't have an input, we use the previous output instead
 
             ops = (self.outputs,)
 
