@@ -264,7 +264,7 @@ class MusicData:
         # could save the created batches in a new folder, data/samples or save/model.
 
         # First part: Randomly extract subsamples of the songs
-        print("Subsampling songs...")
+        print('Subsampling songs ({})...'.format('train' if train_set else 'test'))
 
         sample_subsampling_length = self.args.sample_length+1  # We add 1 because each input has to predict the next output
 

@@ -64,6 +64,7 @@ class Composer:
 
         # TensorFlow utilities for convenience saving/logging
         self.writer = None
+        self.writer_test = None
         self.saver = None
         self.model_dir = ''  # Where the model is saved
         self.glob_step = 0  # Represent the number of iteration for the current model
@@ -121,6 +122,7 @@ class Composer:
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
         training_args.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
+        training_args.add_argument('--testing_curve', type=int, nargs='?', const=10, default=None, help='Also record the testing curve each every x iteration (given by the optional parameter)')
 
         return parser.parse_args(args)
 
@@ -152,8 +154,9 @@ class Composer:
             self.model = Model(self.args)
 
         # Saver/summaries
-        self.writer = tf.train.SummaryWriter(self.model_dir)
-        self.saver = tf.train.Saver(max_to_keep=200)  # Arbitrary limit ?
+        self.writer = tf.train.SummaryWriter(os.path.join(self.model_dir, 'train'))
+        self.writer_test = tf.train.SummaryWriter(os.path.join(self.model_dir, 'test'))
+        self.saver = tf.train.Saver(max_to_keep=200)  # Set the arbitrary limit ?
 
         # TODO: Fixed seed (WARNING: If dataset shuffling, make sure to do that after saving the
         # dataset, otherwise, all what comes after the shuffling won't be replicable when
@@ -206,12 +209,14 @@ class Composer:
 
                 print()
                 print('------- Epoch {} (lr={}) -------'.format(
-                        '{}/{}'.format(e, self.args.num_epochs) if self.args.num_epochs else '{}'.format(e),
-                        self.args.learning_rate
-                    )
+                    '{}/{}'.format(e, self.args.num_epochs) if self.args.num_epochs else '{}'.format(e),
+                    self.args.learning_rate)
                 )
 
                 batches = self.music_data.get_batches()
+
+                if self.args.testing_curve:
+                    batches_test = self.music_data.get_batches(train_set=False)
 
                 # Also update learning parameters eventually ??
 
@@ -219,12 +224,18 @@ class Composer:
                 for next_batch in tqdm(batches, desc='Training'):
                     # Training pass
                     ops, feed_dict = self.model.step(next_batch)
-                    assert len(ops) == 1  # training
+                    assert len(ops) == 1  # gradient_update_op
                     summary, _ = self.sess.run((merged_summaries,) + ops, feed_dict)
                     self.writer.add_summary(summary, self.glob_step)
-                    self.glob_step += 1
+
+                    if self.args.testing_curve and self.glob_step % self.args.testing_curve == 0:
+                        next_batch_test = batches_test[self.glob_step % len(batches_test)]  # Generate test batches in a cycling way (test set smaller than train set)
+                        _, feed_dict = self.model.step(next_batch_test)
+                        summary = self.sess.run(merged_summaries, feed_dict)
+                        self.writer_test.add_summary(summary, self.glob_step)
 
                     # Checkpoint
+                    self.glob_step += 1
                     if self.glob_step % self.args.save_every == 0:
                         self._save_session(self.sess)
 
@@ -297,7 +308,7 @@ class Composer:
 
         model_name = self._get_model_name()
 
-        if os.listdir(self.model_dir):
+        if os.listdir(self.model_dir):  # TODO: Only check for file (not directory) otherwise summary subfolder will make crash
             if self.args.reset:
                 print('Reset: Destroying previous model at {}'.format(self.model_dir))
             # Analysing directory content
@@ -308,9 +319,9 @@ class Composer:
             elif self._get_model_list():
                 print('Conflict with previous models.')
                 raise RuntimeError('Some models are already present in \'{}\'. You should check them first'.format(self.model_dir))
-            else:  # No other model to conflict with (probably summary files)
-                print('No previous model found, but some files found at {}. Cleaning...'.format(self.model_dir))  # Warning: No confirmation asked
-                self.args.reset = True
+            #else:  # No other model to conflict with (probably summary files)  # TODO: RESTORE
+            #    print('No previous model found, but some files found at {}. Cleaning...'.format(self.model_dir))  # Warning: No confirmation asked
+            #    self.args.reset = True
 
             if self.args.reset:  # TODO: Also delete subfolders
                 file_list = [os.path.join(self.model_dir, f) for f in os.listdir(self.model_dir)]
@@ -370,6 +381,7 @@ class Composer:
             self.args.batch_size = config['Training'].getint('batch_size')
             self.args.save_every = config['Training'].getint('save_every')
             self.args.ratio_dataset = config['Training'].getfloat('ratio_dataset')
+            self.args.testing_curve = config['Training'].getint('testing_curve')
 
             # Show the restored params
             print('Warning: Restoring parameters from previous configuration (you should manually edit the file if you want to change one of those)')
@@ -401,6 +413,7 @@ class Composer:
         config['Training']['batch_size'] = str(self.args.batch_size)
         config['Training']['save_every'] = str(self.args.save_every)
         config['Training']['ratio_dataset'] = str(self.args.ratio_dataset)
+        config['Training']['testing_curve'] = str(self.args.testing_curve)
 
         with open(os.path.join(self.model_dir, self.CONFIG_FILENAME), 'w') as config_file:
             config.write(config_file)
@@ -422,6 +435,7 @@ class Composer:
         print('batch_size: {}'.format(self.args.batch_size))
         print('save_every: {}'.format(self.args.save_every))
         print('ratio_dataset: {}'.format(self.args.ratio_dataset))
+        print('testing_curve: {}'.format(self.args.testing_curve))
 
     def _get_model_name(self):
         """ Parse the argument to decide were to save/load the model

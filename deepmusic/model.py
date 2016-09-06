@@ -207,7 +207,7 @@ class Model:
         Args:
             batch (Batch): Input data on testing mode, input and target on output mode
         Return:
-            (ops), dict: A tuple of the (training,) operator or (outputs,) in testing mode with the associated feed dictionary
+            (ops), dict: A tuple of the (training_step,) operator or (outputs,) in testing mode with the associated feed dictionary
         """
 
         # Feed the dictionary
