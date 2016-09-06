@@ -69,14 +69,15 @@ class MusicData:
         # Dataset
         self.songs = []
         
-        self._restore_dataset()
+        if not self.args.test:  # No need to load the dataset when testing
+            self._restore_dataset()
 
-        # Plot some stats:
-        print('Loaded: {} songs'.format(len(self.songs)))  # TODO: Print average, max, min duration
+            # Plot some stats:
+            print('Loaded: {} songs'.format(len(self.songs)))  # TODO: Print average, max, min duration
 
-        if self.args.play_dataset:
-            # TODO: Display some images corresponding to the loaded songs
-            raise NotImplementedError('Can\'t play a song for now')
+            if self.args.play_dataset:
+                # TODO: Display some images corresponding to the loaded songs
+                raise NotImplementedError('Can\'t play a song for now')
 
     def _restore_dataset(self):
         """Load/create the conversations data
@@ -141,15 +142,18 @@ class MusicData:
 
         for filename in tqdm(midi_files):
 
-            tqdm.write('')
-            tqdm.write('Parsing {}'.format(filename))
-
             try:
                 new_song = MidiReader.load_file(filename)
             except MidiInvalidException as e:
-                tqdm.write('File ignored: {}'.format(e))
+                tqdm.write('File ignored ({}): {}'.format(filename, e))
             else:
                 self.songs.append(self._convert_song2array(new_song))
+                tqdm.write('Song loaded {}: {} tracks, {} notes, {} ticks/beat'.format(
+                    filename,
+                    len(new_song.tracks),
+                    sum([len(t.notes) for t in new_song.tracks]),
+                    new_song.ticks_per_beat)
+                )
 
         if not self.songs:
             raise ValueError('Empty dataset. Check that the folder exist and contains supported midi files.')

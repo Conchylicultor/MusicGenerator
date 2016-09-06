@@ -49,6 +49,8 @@ class MidiReader:
 
     MINIMUM_TRACK_LENGTH = 4  # Bellow this value, the track will be ignored
 
+    MIDI_CHANNEL_DRUMS = 10  # The channel reserved for the drums (according to the specs)
+
     # Define a max song length ?
 
     #self.resolution = 0  # bpm
@@ -80,13 +82,6 @@ class MidiReader:
         # Division (ticks per beat notes or SMTPE timecode)
         # If negative (first byte=1), the mode is SMTPE timecode (unsupported)
         # 1 MIDI clock = 1 beat = 1 quarter note
-
-        print('{}: type {}, {} tracks, {} ticks/beat'.format(
-            filename,
-            midi_data.type,
-            len(midi_data.tracks),
-            midi_data.ticks_per_beat
-        ))
 
         # Assert
         if midi_data.type != 1:
@@ -165,7 +160,7 @@ class MidiReader:
                         new_note = music.Note()
                         new_note.tick = abs_tick
                         new_note.note = message.note
-                        if i-1 != message.channel:  # Warning: for type 1 the tracks are shifted because of the tempo map # TODO: Channel management for type 0
+                        if message.channel+1 != i and message.channel+1 != MidiReader.MIDI_CHANNEL_DRUMS:  # Warning: Mido shift the channels (start at 0) # TODO: Channel management for type 0
                             raise MidiInvalidException('Notes belong to the wrong tracks ({} instead of {})'.format(i, message.channel))  # Warning: May not be an error (drums ?) but probably
                         buffer_notes.append(new_note)
                     elif message.type == 'note_off' or message.type == 'note_on':  # Note released
@@ -198,10 +193,10 @@ class MidiReader:
             if buffer_notes:  # All notes should have ended
                 raise MidiInvalidException('Some notes ({}) did not ended'.format(len(buffer_notes)))
             if len(new_track.notes) < MidiReader.MINIMUM_TRACK_LENGTH:
-                tqdm.write('Track {} ignored (too short): {} notes'.format(i, len(new_track.notes)))
+                #tqdm.write('Track {} ignored (too short): {} notes'.format(i, len(new_track.notes)))
                 continue
             if new_track.is_drum:
-                tqdm.write('Track {} ignored (is drum)'.format(i))
+                #tqdm.write('Track {} ignored (is drum)'.format(i))
                 continue
 
             new_song.tracks.append(new_track)
@@ -209,11 +204,6 @@ class MidiReader:
 
         if not new_song.tracks:
             raise MidiInvalidException('Empty song. No track added')
-
-        tqdm.write('Song loaded: {} tracks, {} notes'.format(
-            len(new_song.tracks),
-            sum([len(t.notes) for t in new_song.tracks]))
-        )
 
         return new_song
 

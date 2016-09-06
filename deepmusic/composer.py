@@ -58,7 +58,7 @@ class Composer:
         # Model/dataset parameters
         self.args = None
 
-        # Task specific object
+        # Task specific objects
         self.music_data = None  # Dataset
         self.model = None  # Sequence to sequence model
 
@@ -95,14 +95,15 @@ class Composer:
                                       ' the defined model(s), in interactive mode, the user can wrote his own sentences,'
                                       ' use daemon mode to integrate the chatbot in another program')
         global_args.add_argument('--reset', action='store_true', help='use this if you want to ignore the previous model present on the model directory (Warning: the model will be destroyed with all the folder content)')
-        global_args.add_argument('--keep_all', action='store_true', help='If this option is set, all saved model will be keep (Warning: make sure you have enough free disk space or increase save_every)')  # TODO: Add an option to delimit the max size
+        global_args.add_argument('--keep_all', action='store_true', help='if this option is set, all saved model will be keep (Warning: make sure you have enough free disk space or increase save_every)')  # TODO: Add an option to delimit the max size
         global_args.add_argument('--model_tag', type=str, default=None, help='tag to differentiate which model to store/load')
+        global_args.add_argument('--sample_length', type=int, default=40, help='number of time units (steps) of a training sentence, length of the sequence to generate')  # Warning: the unit is defined by the MusicData.MAXIMUM_SONG_RESOLUTION parameter
         global_args.add_argument('--root_dir', type=str, default=None, help='folder where to look for the models and data')
         global_args.add_argument('--device', type=str, default=None, help='\'gpu\' or \'cpu\' (Warning: make sure you have enough free RAM), allow to choose on which hardware run the model')
 
         # Dataset options
         dataset_args = parser.add_argument_group('Dataset options')
-        dataset_args.add_argument('--dataset_tag', type=str, default='joplin', help='tag to differentiate which data use (if the data are not present, the program will try to generate from the midi folder)')
+        dataset_args.add_argument('--dataset_tag', type=str, default='ragtimemusic', help='tag to differentiate which data use (if the data are not present, the program will try to generate from the midi folder)')
         dataset_args.add_argument('--create_dataset', action='store_true', help='if present, the program will only generate the dataset from the corpus (no training/testing)')
         dataset_args.add_argument('--play_dataset', type=int, nargs='?', const=10, default=None,  help='if set, the program  will randomly play some samples(can be use conjointly with create_dataset if this is the only action you want to perform)')  # TODO: Play midi ? / Or show sample images ? Both ?
         dataset_args.add_argument('--ratio_dataset', type=float, default=1.0, help='ratio of dataset to separate training/testing')  # Not implemented, here maybe useless because we would like to overfit
@@ -120,7 +121,6 @@ class Composer:
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
         training_args.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
-        training_args.add_argument('--sample_length', type=int, default=40, help='The number of beats of a training sentence')  # Warning: What is the real unit quarter note ? compressed tick ?
 
         return parser.parse_args(args)
 
@@ -141,10 +141,11 @@ class Composer:
             self.args.root_dir = os.getcwd()  # Use the current working directory
 
         self._restore_params()  # Update the self.model_dir and self.glob_step, for now, not used when loading Model
+        self._print_params()
 
         self.music_data = MusicData(self.args)
         if self.args.create_dataset:
-            print('Dataset created! You can now try to train some models.')
+            print('Dataset created! You can start training some models.')
             return  # No need to go further
 
         with tf.device(self._get_device()):
@@ -182,7 +183,7 @@ class Composer:
 
         if self.args.test != Composer.TestMode.DAEMON:
             self.sess.close()
-            print("The End! Thanks for using this program")
+            print('The End! Thanks for using this program')
 
     def _main_train(self):
         """ Training loop
@@ -202,14 +203,14 @@ class Composer:
             for e in range(self.args.num_epochs):
 
                 print()
-                print("------- Epoch {}/{} (lr={}) -------".format(e+1, self.args.num_epochs, self.args.learning_rate))
+                print('------- Epoch {}/{} (lr={}) -------'.format(e+1, self.args.num_epochs, self.args.learning_rate))
 
                 batches = self.music_data.get_batches()
 
                 # Also update learning parameters eventually ??
 
                 tic = datetime.datetime.now()
-                for next_batch in tqdm(batches, desc="Training"):
+                for next_batch in tqdm(batches, desc='Training'):
                     # Training pass
                     ops, feed_dict = self.model.step(next_batch)
                     assert len(ops) == 1  # training
@@ -223,7 +224,7 @@ class Composer:
 
                 toc = datetime.datetime.now()
 
-                print("Epoch finished in {}".format(toc-tic))  # Warning: Will overflow if an epoch takes more than 24 hours, and the output isn't really nicer
+                print('Epoch finished in {}'.format(toc-tic))  # Warning: Will overflow if an epoch takes more than 24 hours, and the output isn't really nicer
         except (KeyboardInterrupt, SystemExit):  # If the user press Ctrl+C while testing progress
             print('Interruption detected, exiting the program...')
 
@@ -244,13 +245,13 @@ class Composer:
             return
 
         batches, names = self.music_data.get_batches_test()
+        samples = list(zip(batches, names))
 
         # Predicting for each model present in modelDir
-        for model_name in sorted(model_list):  # TODO: Natural sorting
-            tqdm.write('Restoring previous model from {}'.format(model_name))
+        for model_name in tqdm(sorted(model_list), desc='Model', unit='model'):  # TODO: Natural sorting / TODO: tqdm ?
             self.saver.restore(self.sess, model_name)
 
-            for next_sample in tqdm(zip(batches, names), desc="Generating"):
+            for next_sample in tqdm(samples, desc='Generating ({})'.format(os.path.basename(model_name)), unit='songs'):
                 batch = next_sample[0]
                 name = next_sample[1]  # Unzip
 
@@ -353,6 +354,8 @@ class Composer:
             self.glob_step = config['General'].getint('glob_step')
             self.args.keep_all = config['General'].getboolean('keep_all')
             self.args.dataset_tag = config['General'].get('dataset_tag')
+            if not self.args.test:  # When testing, we don't use the training length
+                self.args.sample_length = config['General'].getint('sample_length')
 
             self.args.hidden_size = config['Network'].getint('hidden_size')
             self.args.num_layers = config['Network'].getint('num_layers')
@@ -361,24 +364,9 @@ class Composer:
             self.args.learning_rate = config['Training'].getfloat('learning_rate')
             self.args.batch_size = config['Training'].getint('batch_size')
             self.args.save_every = config['Training'].getint('save_every')
-            self.args.sample_length = config['Training'].getint('sample_length')
 
             # Show the restored params
-            print()
-            print('Warning: Restoring parameters (you should manually edit the file if you want one of those changed):')
-            print('glob_step: {}'.format(self.glob_step))
-            print('keep_all: {}'.format(self.args.keep_all))
-            print('dataset_tag: {}'.format(self.args.dataset_tag))
-
-            print('hidden_size: {}'.format(self.args.hidden_size))
-            print('num_layers: {}'.format(self.args.num_layers))
-            print('target_weights: {}'.format(self.args.target_weights))
-
-            print('learning_rate: {}'.format(self.args.learning_rate))
-            print('batch_size: {}'.format(self.args.batch_size))
-            print('save_every: {}'.format(self.args.save_every))
-            print('sample_length: {}'.format(self.args.sample_length))
-            print()
+            print('Warning: Restoring parameters from previous configuration (you should manually edit the file if you want to change one of those)')
 
         # When testing, only predict one song at the time
         if self.args.test:
@@ -394,6 +382,7 @@ class Composer:
         config['General']['glob_step'] = str(self.glob_step)
         config['General']['keep_all'] = str(self.args.keep_all)
         config['General']['dataset_tag'] = self.args.dataset_tag
+        config['General']['sample_length'] = str(self.args.sample_length)
 
         config['Network'] = {}
         config['Network']['hidden_size'] = str(self.args.hidden_size)
@@ -405,10 +394,26 @@ class Composer:
         config['Training']['learning_rate'] = str(self.args.learning_rate)
         config['Training']['batch_size'] = str(self.args.batch_size)
         config['Training']['save_every'] = str(self.args.save_every)
-        config['Training']['sample_length'] = str(self.args.sample_length)
 
         with open(os.path.join(self.model_dir, self.CONFIG_FILENAME), 'w') as config_file:
             config.write(config_file)
+    
+    def _print_params(self):
+        """ Print the current params
+        """
+        print('Current parameters:')
+        print('glob_step: {}'.format(self.glob_step))
+        print('keep_all: {}'.format(self.args.keep_all))
+        print('dataset_tag: {}'.format(self.args.dataset_tag))
+        print('sample_length: {}'.format(self.args.sample_length))
+
+        print('hidden_size: {}'.format(self.args.hidden_size))
+        print('num_layers: {}'.format(self.args.num_layers))
+        print('target_weights: {}'.format(self.args.target_weights))
+
+        print('learning_rate: {}'.format(self.args.learning_rate))
+        print('batch_size: {}'.format(self.args.batch_size))
+        print('save_every: {}'.format(self.args.save_every))
 
     def _get_model_name(self):
         """ Parse the argument to decide were to save/load the model
