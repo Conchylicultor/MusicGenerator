@@ -68,16 +68,24 @@ class MusicData:
 
         # Dataset
         self.songs = []
+        self.songs_train = None
+        self.songs_test = None
         
         if not self.args.test:  # No need to load the dataset when testing
             self._restore_dataset()
 
-            # Plot some stats:
-            print('Loaded: {} songs'.format(len(self.songs)))  # TODO: Print average, max, min duration
-
             if self.args.play_dataset:
                 # TODO: Display some images corresponding to the loaded songs
                 raise NotImplementedError('Can\'t play a song for now')
+
+            self._split_dataset()  # Warning: the list order will determine the train/test sets (so important that it don't change from run to run)
+
+            # Plot some stats:
+            print('Loaded: {} songs ({} train/{} test)'.format(
+                len(self.songs),
+                len(self.songs_train),
+                len(self.songs_test))
+            )  # TODO: Print average, max, min duration
 
     def _restore_dataset(self):
         """Load/create the conversations data
@@ -101,6 +109,7 @@ class MusicData:
             self._create_samples()
 
             print('Saving dataset...')
+            np.random.shuffle(self.songs)  # Important to do that before saving so the train/test set will be fixed each time we reload the dataset
             self._save_samples(samples_path)
 
     def _restore_samples(self, samples_path):
@@ -234,8 +243,17 @@ class MusicData:
         # TODO: Assert that the scale factor is not a float (the % =0)
         return 4 * song.ticks_per_beat // (self.MAXIMUM_SONG_RESOLUTION*self.NOTES_PER_BAR)
 
-    def get_batches(self):
+    def _split_dataset(self):
+        """ Create the test/train set from the loaded songs
+        """
+        split_nb = int(self.args.ratio_dataset * len(self.songs))
+        self.songs_train = self.songs[:split_nb]
+        self.songs_test = self.songs[split_nb:]
+
+    def get_batches(self, train_set=True):
         """Prepare the batches for the current epoch
+        Args:
+            train_set (Bool): Indicate on which training/testing set compute the batches
         Return:
             List[Batch]: Get a list of the batches for the next epoch
         """
@@ -251,7 +269,11 @@ class MusicData:
         sample_subsampling_length = self.args.sample_length+1  # We add 1 because each input has to predict the next output
 
         sub_songs = []
-        for song in self.songs:
+        if train_set:
+            songs_set = self.songs_train
+        else:
+            songs_set = self.songs_test
+        for song in songs_set:
             len_song = song.shape[-1]  # The last dimension correspond to the song duration
             max_start = len_song - sample_subsampling_length
             assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)

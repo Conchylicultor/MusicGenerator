@@ -106,7 +106,7 @@ class Composer:
         dataset_args.add_argument('--dataset_tag', type=str, default='ragtimemusic', help='tag to differentiate which data use (if the data are not present, the program will try to generate from the midi folder)')
         dataset_args.add_argument('--create_dataset', action='store_true', help='if present, the program will only generate the dataset from the corpus (no training/testing)')
         dataset_args.add_argument('--play_dataset', type=int, nargs='?', const=10, default=None,  help='if set, the program  will randomly play some samples(can be use conjointly with create_dataset if this is the only action you want to perform)')  # TODO: Play midi ? / Or show sample images ? Both ?
-        dataset_args.add_argument('--ratio_dataset', type=float, default=1.0, help='ratio of dataset to separate training/testing')  # Not implemented, here maybe useless because we would like to overfit
+        dataset_args.add_argument('--ratio_dataset', type=float, default=0.9, help='ratio of songs between training/testing')
 
         # Network options (Warning: if modifying something here, also make the change on save/restore_params() )
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
@@ -117,7 +117,7 @@ class Composer:
 
         # Training options (Warning: if modifying something here, also make the change on save/restore_params() )
         training_args = parser.add_argument_group('Training options')
-        training_args.add_argument('--num_epochs', type=int, default=30, help='maximum number of epochs to run')
+        training_args.add_argument('--num_epochs', type=int, default=0, help='maximum number of epochs to run (0 for infinity)')
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
         training_args.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
@@ -200,10 +200,16 @@ class Composer:
         print('Start training (press Ctrl+C to save and exit)...')
 
         try:  # If the user exit while training, we still try to save the model
-            for e in range(self.args.num_epochs):
+            e = 0
+            while self.args.num_epochs == 0 or e < self.args.num_epochs:
+                e += 1
 
                 print()
-                print('------- Epoch {}/{} (lr={}) -------'.format(e+1, self.args.num_epochs, self.args.learning_rate))
+                print('------- Epoch {} (lr={}) -------'.format(
+                        '{}/{}'.format(e, self.args.num_epochs) if self.args.num_epochs else '{}'.format(e),
+                        self.args.learning_rate
+                    )
+                )
 
                 batches = self.music_data.get_batches()
 
@@ -306,12 +312,11 @@ class Composer:
                 print('No previous model found, but some files found at {}. Cleaning...'.format(self.model_dir))  # Warning: No confirmation asked
                 self.args.reset = True
 
-            if self.args.reset:
+            if self.args.reset:  # TODO: Also delete subfolders
                 file_list = [os.path.join(self.model_dir, f) for f in os.listdir(self.model_dir)]
                 for f in file_list:
                     print('Removing {}'.format(f))
                     os.remove(f)
-
         else:
             print('No previous model found, starting from clean directory: {}'.format(self.model_dir))
 
@@ -364,6 +369,7 @@ class Composer:
             self.args.learning_rate = config['Training'].getfloat('learning_rate')
             self.args.batch_size = config['Training'].getint('batch_size')
             self.args.save_every = config['Training'].getint('save_every')
+            self.args.ratio_dataset = config['Training'].getfloat('ratio_dataset')
 
             # Show the restored params
             print('Warning: Restoring parameters from previous configuration (you should manually edit the file if you want to change one of those)')
@@ -394,6 +400,7 @@ class Composer:
         config['Training']['learning_rate'] = str(self.args.learning_rate)
         config['Training']['batch_size'] = str(self.args.batch_size)
         config['Training']['save_every'] = str(self.args.save_every)
+        config['Training']['ratio_dataset'] = str(self.args.ratio_dataset)
 
         with open(os.path.join(self.model_dir, self.CONFIG_FILENAME), 'w') as config_file:
             config.write(config_file)
@@ -414,6 +421,7 @@ class Composer:
         print('learning_rate: {}'.format(self.args.learning_rate))
         print('batch_size: {}'.format(self.args.batch_size))
         print('save_every: {}'.format(self.args.save_every))
+        print('ratio_dataset: {}'.format(self.args.ratio_dataset))
 
     def _get_model_name(self):
         """ Parse the argument to decide were to save/load the model
