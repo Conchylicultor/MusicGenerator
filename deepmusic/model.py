@@ -20,6 +20,7 @@ Model to generate new songs
 
 """
 
+import numpy as np  # To generate random numbers
 import tensorflow as tf
 
 from deepmusic.musicdata import Batch
@@ -68,7 +69,58 @@ class Model:
                 Model.TargetWeightsPolicy.LINEAR,
                 Model.TargetWeightsPolicy.STEP
             ]
-    
+
+    class ScheduledSamplingPolicy:
+        """ Container for the schedule sampling policy
+        See http://arxiv.org/abs/1506.03099 for more details
+        """
+        NONE = 'none'  # No scheduled sampling (always take the given input)
+        ALWAYS = 'always'  # Always samples from the predicted output
+        LINEAR = 'linear'  # Gradually increase the sampling rate
+        
+        def __init__(self, args):
+            self.sampling_policy_fct = None
+
+            assert args.scheduled_sampling
+            assert len(args.scheduled_sampling) > 0
+
+            policy = args.scheduled_sampling[0]
+            if policy == Model.ScheduledSamplingPolicy.NONE:
+                self.sampling_policy_fct = lambda step: 1.0
+            elif policy == Model.ScheduledSamplingPolicy.ALWAYS:
+                self.sampling_policy_fct = lambda step: 0.0
+            elif policy == Model.ScheduledSamplingPolicy.LINEAR:
+                if len(args.scheduled_sampling) != 5:
+                    raise ValueError('Not the right arguments for the sampling linear policy ({} instead of 4)'.format(len(args.scheduled_sampling)-1))
+
+                start_step = int(args.scheduled_sampling[1])
+                end_step = int(args.scheduled_sampling[2])
+                start_value = float(args.scheduled_sampling[3])
+                end_value = float(args.scheduled_sampling[4])
+
+                # TODO: Check arguments validity, add default values (as optional arguments)
+
+                def linear_policy(step):
+                    if step < start_step:
+                        return start_value
+                    elif start_step <= step < end_step:
+                        slope = (start_value-end_value)/(start_step-end_step)  # < 0 (because end_step>start_step and start_value>end_value)
+                        return slope*(step-start_step) + start_value
+                    elif end_step <= step:
+                        return end_value
+                    else:
+                        raise RuntimeError('Invalid value for the sampling policy')  # Parameters have not been correctly defined!
+
+                self.sampling_policy_fct = linear_policy
+            else:
+                raise ValueError('Unknown chosen schedule sampling policy: {}'.format(policy))
+
+        def get_prev_threshold(self, glob_step):
+            """ Return the previous sampling probability for the current step.
+            If above, the RNN should use the previous step instead of the given input.
+            """
+            return self.sampling_policy_fct(glob_step)
+
     def __init__(self, args):
         """
         Args:
@@ -87,6 +139,9 @@ class Model:
         self.opt_op = None  # Optimizer
         self.outputs = None  # Outputs of the network
         self.final_state = None  # When testing, we feed this value as initial state ?
+
+        # Other options
+        self.schedule_policy = None
 
         # Construct the graphs
         self._build_network()
@@ -182,6 +237,8 @@ class Model:
             # For now, by using sigmoid_cross_entropy_with_logits, the task is formulated as a NB_NOTES binary
             # classification problems
 
+            self.schedule_policy = Model.ScheduledSamplingPolicy(self.args)
+
             target_weights_policy = Model.TargetWeightsPolicy(self.args)  # Load the chosen policy
 
             loss_fct = tf.nn.seq2seq.sequence_loss(  # Or sequence_loss_by_example ??
@@ -201,14 +258,17 @@ class Model:
             )
             self.opt_op = opt.minimize(loss_fct)
     
-    def step(self, batch):
+    def step(self, batch, train_set=True, glob_step=-1):
         """ Forward/training step operation.
         Does not perform run on itself but just return the operators to do so. Those have then to be run
         Args:
             batch (Batch): Input data on testing mode, input and target on output mode
+            train_set (Bool): indicate if the batch come from the test/train set
+            glob_step (int): indicate the global step for the schedule sampling
         Return:
             (ops), dict: A tuple of the (training_step,) operator or (outputs,) in testing mode with the associated feed dictionary
         """
+        # TODO: Could optimize feeding between train/test/generating (compress code)
 
         # Feed the dictionary
         feed_dict = {}
@@ -220,7 +280,10 @@ class Model:
                 feed_dict[self.inputs[i]] = batch.inputs[i]
                 feed_dict[self.targets[i]] = batch.targets[i]
                 # TODO: S. Bengio trick
-                feed_dict[self.use_prev[i]] = False
+                if not train_set or np.random.rand() > self.schedule_policy.get_prev_threshold(glob_step):  # TODO: weight the threshold by the target weights (don't schedule sample if weight=0)
+                    feed_dict[self.use_prev[i]] = True
+                else:
+                    feed_dict[self.use_prev[i]] = False
 
             ops = (self.opt_op,)
         else:  # Testing (batch_size == 1)

@@ -298,7 +298,7 @@ class MusicData:
             for i in range(nb_samples//self.args.batch_size):
                 yield sub_songs[i*self.args.batch_size:(i+1)*self.args.batch_size]
 
-        for samples in gen_next_samples():
+        for samples in gen_next_samples():  # TODO: tqdm with persist = False
             batch = Batch()
 
             # samples has shape [batch_size, NB_NOTES, sample_subsampling_length]

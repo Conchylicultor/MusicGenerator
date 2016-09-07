@@ -35,17 +35,47 @@
      "seq":[
         {"notes":[67]}
     ]},
-    {"name":"Do_re_mi",
+    {"name":"DoReMi",
      "seq":[
         {"notes":[60]},
         {"notes":[62]},
         {"notes":[64]}
+    ]},
+    {"name":"Do_re_mi_",
+     "seq":[
+        {"notes":[60]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[61]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[62]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[]}
     ]},
     {"name":"Chromatic",
      "seq":[
         {"notes":[60]},
         {"notes":[61]},
         {"notes":[62]}
+    ]},
+    {"name":"Chromatic_",
+     "seq":[
+        {"notes":[60]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[61]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[62]},
+        {"notes":[]},
+        {"notes":[]},
+        {"notes":[]}
     ]},
     {"name":"C_major",
      "seq":[

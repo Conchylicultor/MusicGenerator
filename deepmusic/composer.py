@@ -113,6 +113,7 @@ class Composer:
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
         nn_args.add_argument('--hidden_size', type=int, default=256, help='Size of one neural network layer')
         nn_args.add_argument('--num_layers', type=int, default=2, help='Nb of layers of the RNN')
+        nn_args.add_argument('--scheduled_sampling', type=str, nargs='+', default=[Model.ScheduledSamplingPolicy.NONE], help='Define the schedule sampling policy. If set, have to indicates the parameters of the chosen policy')
         nn_args.add_argument('--target_weights', nargs='?', choices=Model.TargetWeightsPolicy.get_policies(), default=Model.TargetWeightsPolicy.NONE,
                              help='policy to choose the loss contribution of each step')
 
@@ -160,7 +161,7 @@ class Composer:
 
         # TODO: Fixed seed (WARNING: If dataset shuffling, make sure to do that after saving the
         # dataset, otherwise, all what comes after the shuffling won't be replicable when
-        # reloading the dataset). How to restore the seed after loading ??
+        # reloading the dataset). How to restore the seed after loading ?? (with get_state/set_state)
         # Also fix seed for np.random (does it works globally for all files ?)
 
         # Running session
@@ -223,14 +224,14 @@ class Composer:
                 tic = datetime.datetime.now()
                 for next_batch in tqdm(batches, desc='Training'):
                     # Training pass
-                    ops, feed_dict = self.model.step(next_batch)
+                    ops, feed_dict = self.model.step(next_batch, train_set=True, glob_step=self.glob_step)
                     assert len(ops) == 1  # gradient_update_op
                     summary, _ = self.sess.run((merged_summaries,) + ops, feed_dict)
                     self.writer.add_summary(summary, self.glob_step)
 
                     if self.args.testing_curve and self.glob_step % self.args.testing_curve == 0:
                         next_batch_test = batches_test[self.glob_step % len(batches_test)]  # Generate test batches in a cycling way (test set smaller than train set)
-                        _, feed_dict = self.model.step(next_batch_test)
+                        _, feed_dict = self.model.step(next_batch_test, train_set=False)
                         summary = self.sess.run(merged_summaries, feed_dict)
                         self.writer_test.add_summary(summary, self.glob_step)
 
@@ -308,7 +309,7 @@ class Composer:
 
         model_name = self._get_model_name()
 
-        if os.listdir(self.model_dir):  # TODO: Only check for file (not directory) otherwise summary subfolder will make crash
+        if os.listdir(self.model_dir):
             if self.args.reset:
                 print('Reset: Destroying previous model at {}'.format(self.model_dir))
             # Analysing directory content
@@ -319,15 +320,16 @@ class Composer:
             elif self._get_model_list():
                 print('Conflict with previous models.')
                 raise RuntimeError('Some models are already present in \'{}\'. You should check them first'.format(self.model_dir))
-            #else:  # No other model to conflict with (probably summary files)  # TODO: RESTORE
-            #    print('No previous model found, but some files found at {}. Cleaning...'.format(self.model_dir))  # Warning: No confirmation asked
-            #    self.args.reset = True
+            else:  # No other model to conflict with (probably summary files)
+                print('No previous model found, but some files/folders found at {}. Cleaning...'.format(self.model_dir))  # Warning: No confirmation asked
+                self.args.reset = True
 
-            if self.args.reset:  # TODO: Also delete subfolders
-                file_list = [os.path.join(self.model_dir, f) for f in os.listdir(self.model_dir)]
-                for f in file_list:
-                    print('Removing {}'.format(f))
-                    os.remove(f)
+            if self.args.reset:
+                # WARNING: No confirmation is asked. All subfolders will be deleted
+                for root, dirs, files in os.walk(self.model_dir, topdown=False):
+                    for name in files:
+                        print('Removing {}'.format(name))
+                        os.remove(os.path.join(root, name))
         else:
             print('No previous model found, starting from clean directory: {}'.format(self.model_dir))
 
@@ -376,6 +378,7 @@ class Composer:
             self.args.hidden_size = config['Network'].getint('hidden_size')
             self.args.num_layers = config['Network'].getint('num_layers')
             self.args.target_weights = config['Network'].get('target_weights')
+            self.args.scheduled_sampling = config['Network'].get('scheduled_sampling').split(' ')
 
             self.args.learning_rate = config['Training'].getfloat('learning_rate')
             self.args.batch_size = config['Training'].getint('batch_size')
@@ -389,6 +392,7 @@ class Composer:
         # When testing, only predict one song at the time
         if self.args.test:
             self.args.batch_size = 1
+            self.args.scheduled_sampling = [Model.ScheduledSamplingPolicy.NONE]
 
     def _save_params(self):
         """ Save the params of the model, like the current glob_step value
@@ -406,6 +410,7 @@ class Composer:
         config['Network']['hidden_size'] = str(self.args.hidden_size)
         config['Network']['num_layers'] = str(self.args.num_layers)
         config['Network']['target_weights'] = self.args.target_weights  # Could be modified manually
+        config['Network']['scheduled_sampling'] = ' '.join(self.args.scheduled_sampling)
         
         # Keep track of the learning params (are not model dependent so can be manually edited)
         config['Training'] = {}
@@ -430,6 +435,7 @@ class Composer:
         print('hidden_size: {}'.format(self.args.hidden_size))
         print('num_layers: {}'.format(self.args.num_layers))
         print('target_weights: {}'.format(self.args.target_weights))
+        print('scheduled_sampling: {}'.format(' '.join(self.args.scheduled_sampling)))
 
         print('learning_rate: {}'.format(self.args.learning_rate))
         print('batch_size: {}'.format(self.args.batch_size))
