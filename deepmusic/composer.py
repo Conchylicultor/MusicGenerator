@@ -28,6 +28,7 @@ import os  # Files management
 from typing import Dict, Tuple, List
 from tqdm import tqdm  # Progress bar
 import tensorflow as tf
+import gc
 
 from deepmusic.musicdata import MusicData
 from deepmusic.midireader import MidiReader
@@ -123,7 +124,7 @@ class Composer:
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
         training_args.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
-        training_args.add_argument('--testing_curve', type=int, nargs='?', const=10, default=None, help='Also record the testing curve each every x iteration (given by the optional parameter)')
+        training_args.add_argument('--testing_curve', type=int, default=10, help='Also record the testing curve each every x iteration (given by the parameter)')
 
         return parser.parse_args(args)
 
@@ -214,6 +215,10 @@ class Composer:
                     self.args.learning_rate)
                 )
 
+                batches = None
+                batches_test = None
+                gc.collect()  # TODO: Better memory management (use generators,...)
+
                 batches = self.music_data.get_batches()
 
                 if self.args.testing_curve:
@@ -279,9 +284,14 @@ class Composer:
                 # TODO: Save the output as image (hotmap red/blue to see the prediction confidence)
 
                 songs = self.music_data.convert_to_songs(outputs)
-                base_name = model_name[:-len(self.MODEL_EXT)]
+
+                model_dir, model_filename = os.path.split(model_name)
+                base_dir = os.path.join(model_dir, 'midi')
+                base_name = model_filename[:-len(self.MODEL_EXT)]
+                if not os.path.exists(base_dir):
+                    os.makedirs(base_dir)
                 for i, song in enumerate(songs):
-                    MidiReader.write_song(song, base_name + '-' + str(i) + '-' + name + '.mid')
+                    MidiReader.write_song(song, os.path.join(base_dir, base_name + '-' + str(i) + '-' + name + '.mid'))
                 # TODO: Print song statistics (nb of generated notes,...)
 
         print('Prediction finished, {} songs generated'.format(self.args.batch_size * len(model_list) * len(batches)))

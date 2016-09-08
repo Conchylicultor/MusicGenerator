@@ -262,6 +262,8 @@ class MusicData:
         # TODO: Create batches (randomly cut each song in some small parts (need to know the total length for that)
         # then create the big matrix (NB_NOTE*sample_length) and turn that into batch). If process too long,
         # could save the created batches in a new folder, data/samples or save/model.
+        
+        # TODO: Optimize memory management
 
         # First part: Randomly extract subsamples of the songs
         print('Subsampling songs ({})...'.format('train' if train_set else 'test'))

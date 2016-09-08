@@ -98,26 +98,36 @@ class Model:
                 start_value = float(args.scheduled_sampling[3])
                 end_value = float(args.scheduled_sampling[4])
 
+                if (start_step >= end_step or
+                   not (0.0 <= start_value <= 1.0) or
+                   not (0.0 <= end_value <= 1.0)):
+                    raise ValueError('Some schedule sampling parameters incorrect.')
+
                 # TODO: Check arguments validity, add default values (as optional arguments)
 
                 def linear_policy(step):
                     if step < start_step:
-                        return start_value
+                        threshold = start_value
                     elif start_step <= step < end_step:
                         slope = (start_value-end_value)/(start_step-end_step)  # < 0 (because end_step>start_step and start_value>end_value)
-                        return slope*(step-start_step) + start_value
+                        threshold = slope*(step-start_step) + start_value
                     elif end_step <= step:
-                        return end_value
+                        threshold = end_value
                     else:
                         raise RuntimeError('Invalid value for the sampling policy')  # Parameters have not been correctly defined!
+                    assert 0.0 <= threshold <= 1.0
+                    return threshold
 
                 self.sampling_policy_fct = linear_policy
             else:
                 raise ValueError('Unknown chosen schedule sampling policy: {}'.format(policy))
 
-        def get_prev_threshold(self, glob_step):
+        def get_prev_threshold(self, glob_step, i=0):
             """ Return the previous sampling probability for the current step.
             If above, the RNN should use the previous step instead of the given input.
+            Args:
+                glob_step (int): the global iteration step for the training
+                i (int): the timestep of the RNN (TODO: implement incrementive slope (progression like -\|), remove the '=0')
             """
             return self.sampling_policy_fct(glob_step)
 
@@ -141,6 +151,7 @@ class Model:
         self.final_state = None  # When testing, we feed this value as initial state ?
 
         # Other options
+        self.target_weights_policy = None
         self.schedule_policy = None
 
         # Construct the graphs
@@ -238,13 +249,13 @@ class Model:
             # classification problems
 
             self.schedule_policy = Model.ScheduledSamplingPolicy(self.args)
+            self.target_weights_policy = Model.TargetWeightsPolicy(self.args)  # Load the chosen policy
 
-            target_weights_policy = Model.TargetWeightsPolicy(self.args)  # Load the chosen policy
-
+            # TODO: If train on different length, check that the loss is proportional to the length or average ???
             loss_fct = tf.nn.seq2seq.sequence_loss(  # Or sequence_loss_by_example ??
                 self.outputs,
                 self.targets,
-                [tf.constant(target_weights_policy.get_weight(i), shape=self.targets[0].get_shape()) for i in range(len(self.targets))],  # Weights
+                [tf.constant(self.target_weights_policy.get_weight(i), shape=self.targets[0].get_shape()) for i in range(len(self.targets))],  # Weights
                 softmax_loss_function=tf.nn.sigmoid_cross_entropy_with_logits
             )
             tf.scalar_summary('training_loss', loss_fct)  # Keep track of the cost
@@ -279,8 +290,8 @@ class Model:
             for i in range(self.args.sample_length):
                 feed_dict[self.inputs[i]] = batch.inputs[i]
                 feed_dict[self.targets[i]] = batch.targets[i]
-                # TODO: S. Bengio trick
-                if not train_set or np.random.rand() > self.schedule_policy.get_prev_threshold(glob_step):  # TODO: weight the threshold by the target weights (don't schedule sample if weight=0)
+                #if not train_set or np.random.rand() > self.schedule_policy.get_prev_threshold(glob_step)*self.target_weights_policy.get_weight(i):  # Regular Schedule sample (TODO: Try sampling with the weigths or a mix of weights/sampling)
+                if not train_set or np.random.rand() > self.schedule_policy.get_prev_threshold(glob_step):  # Weight the threshold by the target weights (don't schedule sample if weight=0)
                     feed_dict[self.use_prev[i]] = True
                 else:
                     feed_dict[self.use_prev[i]] = False
