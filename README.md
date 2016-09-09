@@ -17,10 +17,10 @@ The program require the following dependencies (easy to install using pip):
  * Numpy (should be installed with TensorFlow)
  * Mido (midi library)
  * Tqdm (for the nice progression bars)
- * OpenCv (Sorry, there is no simple way to install it with python 3)
+ * OpenCv (Sorry, there is no simple way to install it with python 3. It's primarily used as visualisation tool to print the piano roll so is quite optional. All OpenCv calls are contained inside the imgconnector file so if you want to use test the program without OpenCv, you can try removing the functions inside the file)
 
 ## Running
 
-To train the model, simply run `main.py`. Once trained, you can generate the results with `main.py --test`. For more help and options, use `python main.py -h`.
+To train the model, simply run `main.py`. Once trained, you can generate the results with `main.py --test --sample_length 500`. For more help and options, use `python main.py -h`.
 
 To visualize the computational graph and the cost with TensorBoard, just run tensorboard --logdir save/. .

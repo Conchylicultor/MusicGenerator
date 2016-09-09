@@ -31,7 +31,7 @@ import tensorflow as tf
 import gc
 
 from deepmusic.musicdata import MusicData
-from deepmusic.midireader import MidiReader
+from deepmusic.midiconnector import MidiConnector
 from deepmusic.model import Model
 
 
@@ -295,7 +295,7 @@ class Composer:
                     # the loops, simple metric: nb of generated notes, nb of unique notes (Metric: 2d 
                     # tensor [NB_NOTES, nb_of_time_the_note_is played], could plot histogram normalized by nb of 
                     # notes). Could print pinao roll instead
-                    MidiReader.write_song(song, os.path.join(base_dir, base_name + '-' + str(i) + '-' + name + '.mid'))
+                    MidiConnector.write_song(song, os.path.join(base_dir, base_name + '-' + str(i) + '-' + name + '.mid'))
                 # TODO: Print song statistics (nb of generated notes,...)
 
         print('Prediction finished, {} songs generated'.format(self.args.batch_size * len(model_list) * len(batches)))

@@ -4,6 +4,7 @@ For this project, due to the lack of open sources python 3 compatibles library, 
 
 ```python
 import deepmusic.songstruct as music
+from deepmusic.midiconnector import MidiConnector
 
 test_song = music.Song()
 main_track = music.Track()
@@ -18,5 +19,5 @@ for i in range(44):  # Add some notes
     main_track.notes.append(new_note)
  
 test_song.tracks.append(main_track)
-MidiReader.write_song(test_song, 'data/midi/test.mid')
+MidiConnector.write_song(test_song, 'data/midi/test.mid')
 ```

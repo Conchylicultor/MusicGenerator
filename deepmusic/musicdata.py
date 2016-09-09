@@ -26,8 +26,8 @@ import numpy as np  # Batch data
 import json
 # TODO: import cv2  # Plot the piano roll
 
-from deepmusic.midireader import MidiReader
-from deepmusic.midireader import MidiInvalidException
+from deepmusic.midiconnector import MidiConnector
+from deepmusic.midiconnector import MidiInvalidException
 import deepmusic.songstruct as music
 
 
@@ -152,7 +152,7 @@ class MusicData:
         for filename in tqdm(midi_files):
 
             try:
-                new_song = MidiReader.load_file(filename)
+                new_song = MidiConnector.load_file(filename)
             except MidiInvalidException as e:
                 tqdm.write('File ignored ({}): {}'.format(filename, e))
             else:
