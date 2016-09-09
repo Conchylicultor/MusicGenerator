@@ -281,7 +281,7 @@ class MusicData:
             assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
             nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length
             for _ in range(nb_sample_song):
-                start = np.random.randint(max_start)
+                start = np.random.randint(max_start)  # TODO: Add mode to only start at the begining of a bar
                 sub_song = song[:, start:start+sample_subsampling_length]
                 sub_songs.append(sub_song)
 

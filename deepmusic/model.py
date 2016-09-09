@@ -103,7 +103,7 @@ class Model:
                    not (0.0 <= end_value <= 1.0)):
                     raise ValueError('Some schedule sampling parameters incorrect.')
 
-                # TODO: Check arguments validity, add default values (as optional arguments)
+                # TODO: Add default values (as optional arguments)
 
                 def linear_policy(step):
                     if step < start_step:
@@ -161,7 +161,7 @@ class Model:
         """ Create the computational graph
         """
 
-        # Placeholders (Use tf.SparseTensor with training=False instead)
+        # Placeholders (Use tf.SparseTensor with training=False instead) (TODO: Try restoring dynamic batch_size)
         with tf.name_scope('placeholder_inputs'):
             self.inputs = [
                 tf.placeholder(
@@ -252,13 +252,17 @@ class Model:
             self.target_weights_policy = Model.TargetWeightsPolicy(self.args)  # Load the chosen policy
 
             # TODO: If train on different length, check that the loss is proportional to the length or average ???
-            loss_fct = tf.nn.seq2seq.sequence_loss(  # Or sequence_loss_by_example ??
+            loss_fct = tf.nn.seq2seq.sequence_loss(
                 self.outputs,
                 self.targets,
                 [tf.constant(self.target_weights_policy.get_weight(i), shape=self.targets[0].get_shape()) for i in range(len(self.targets))],  # Weights
-                softmax_loss_function=tf.nn.sigmoid_cross_entropy_with_logits
+                softmax_loss_function=tf.nn.sigmoid_cross_entropy_with_logits,
+                average_across_timesteps=False,  # I think it's best for variables length sequences (specially with the target weights=0), isn't it (it implies also that short sequences are less penalized than long ones) ? (TODO: For variables length sequences, be careful about the target weights)
+                average_across_batch=False  # Penalize by sample (should allows dynamic batch size)
             )
             tf.scalar_summary('training_loss', loss_fct)  # Keep track of the cost
+
+            # TODO: Also keep track of magnitudes (how much is updated)
 
             # Initialize the optimizer
             opt = tf.train.AdamOptimizer(

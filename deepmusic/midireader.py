@@ -76,9 +76,6 @@ class MidiReader:
         # * type 1 (synchronous): all tracks start at the same time
         # * type 2 (asynchronous): each track is independent of the others
 
-        # Nb tracks
-        # The first track is usually (always a header track)
-
         # Division (ticks per beat notes or SMTPE timecode)
         # If negative (first byte=1), the mode is SMTPE timecode (unsupported)
         # 1 MIDI clock = 1 beat = 1 quarter note

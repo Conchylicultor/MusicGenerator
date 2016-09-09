@@ -291,6 +291,10 @@ class Composer:
                 if not os.path.exists(base_dir):
                     os.makedirs(base_dir)
                 for i, song in enumerate(songs):
+                    # TODO: Include infos on potentially interesting songs (include metric in the name ?), we should try to detect
+                    # the loops, simple metric: nb of generated notes, nb of unique notes (Metric: 2d 
+                    # tensor [NB_NOTES, nb_of_time_the_note_is played], could plot histogram normalized by nb of 
+                    # notes). Could print pinao roll instead
                     MidiReader.write_song(song, os.path.join(base_dir, base_name + '-' + str(i) + '-' + name + '.mid'))
                 # TODO: Print song statistics (nb of generated notes,...)
 
