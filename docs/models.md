@@ -13,6 +13,7 @@ Because there is a high bias toward the negative class (key not pressed), I was 
 Usually the first notes are quite randoms but after few bars, the network stabilize over a part of the song he remember. When trying to generate sequences longer than the training ones, the network will simply loop over some parts and play it indefinitely. You can listen one of the generated song [here](https://soundcloud.com/reivalk/basic-rnn-joplin-example-overfitting?in=reivalk/sets/music-generator-experiments). We can clearly recognize parts of [Rag Dance](https://youtu.be/tCrj1s1iVas).
 
 ![Training piano roll](imgs/training_begin.png) ![Training piano roll](imgs/training_end.png)
+
 *Piano rolls of the predictions. During the first iterations, the networks only predict very repetitive patterns. When training longer, the patterns become more complex*
 
 I then applied this model on a larger dataset (400+ songs). Here are [one example](https://soundcloud.com/reivalk/basic-rnn-ragtime-1?in=reivalk/sets/music-generator-experiments) and [another](https://soundcloud.com/reivalk/basic-rnn-ragtime-2?in=reivalk/sets/music-generator-experiments) of generated songs with this model. The originals generated midi files can be found in [this folder](midi/). I convert them to mp3 using the utility script present in the root directory.
