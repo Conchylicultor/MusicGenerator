@@ -20,13 +20,14 @@ Image connector interface
 
 """
 
-import cv2
+import cv2 as cv
+import numpy as np
 
-import deepmusic.songstruct as music
+import deepmusic.songstruct as music  # Should we use that to tuncate the top and bottom image ?
 
 
 class ImgConnector:
-    """ Class to read and write songs as images
+    """ Class to read and write songs (piano roll arrays) as images
     """
 
     @staticmethod
@@ -35,15 +36,26 @@ class ImgConnector:
         Args:
             filename (str): a valid img file
         Return:
-            Song: a song object containing the tracks and melody
+            np.array: the piano roll associated with the
         """
-        # TODO
+        # TODO ? Could be useful to load initiators created with Gimp (more intuitive than the current version)
 
     @staticmethod
-    def write_song(song, filename):
+    def write_song(piano_roll, filename):
         """ Save the song on disk
         Args:
-            song (Song): a song object containing the tracks and melody
+            piano_roll (np.array): a song object containing the tracks and melody
             filename (str): the path were to save the song
         """
-        # TODO
+        note_played = piano_roll > 0.5
+        piano_roll_int = np.uint8(piano_roll*255)
+
+        b = piano_roll_int * (~note_played).astype(np.uint8)  # Note silenced
+        g = np.zeros(piano_roll_int.shape, dtype=np.uint8)    # Empty channel
+        r = piano_roll_int * note_played.astype(np.uint8)     # Notes played
+
+        img = cv.merge((b, g, r))
+
+        # TODO: We could insert a first column indicating the piano keys (black/white key)
+
+        cv.imwrite(filename, img)

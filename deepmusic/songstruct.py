@@ -74,7 +74,7 @@ class Track:
         assert msg.type == 'program_change'
 
         self.instrument = msg.program
-        if msg.channel == 10 or msg.program > 112:
+        if msg.channel == 9 or msg.program > 112:  # Warning: Mido shift the channels (start at 0)
             self.is_drum = True
 
         return True

@@ -32,6 +32,7 @@ import gc
 
 from deepmusic.musicdata import MusicData
 from deepmusic.midiconnector import MidiConnector
+from deepmusic.imgconnector import ImgConnector
 from deepmusic.model import Model
 
 
@@ -283,19 +284,22 @@ class Composer:
                 outputs = self.sess.run(ops[0], feed_dict)
                 # TODO: Save the output as image (hotmap red/blue to see the prediction confidence)
 
-                songs = self.music_data.convert_to_songs(outputs)
+                piano_rolls = self.music_data.convert_to_piano_rolls(outputs)
 
                 model_dir, model_filename = os.path.split(model_name)
                 base_dir = os.path.join(model_dir, 'midi')
                 base_name = model_filename[:-len(self.MODEL_EXT)]
                 if not os.path.exists(base_dir):
                     os.makedirs(base_dir)
-                for i, song in enumerate(songs):
+                for i, array in enumerate(piano_rolls):  # Should be 1 (batch_size=1)
                     # TODO: Include infos on potentially interesting songs (include metric in the name ?), we should try to detect
                     # the loops, simple metric: nb of generated notes, nb of unique notes (Metric: 2d 
                     # tensor [NB_NOTES, nb_of_time_the_note_is played], could plot histogram normalized by nb of 
                     # notes). Could print pinao roll instead
-                    MidiConnector.write_song(song, os.path.join(base_dir, base_name + '-' + str(i) + '-' + name + '.mid'))
+                    base_name_common = base_name + '-' + str(i) + '-' + name
+                    song = self.music_data._convert_array2song(array)
+                    ImgConnector.write_song(array, os.path.join(base_dir, base_name_common + '.png'))
+                    MidiConnector.write_song(song, os.path.join(base_dir, base_name_common + '.mid'))
                 # TODO: Print song statistics (nb of generated notes,...)
 
         print('Prediction finished, {} songs generated'.format(self.args.batch_size * len(model_list) * len(batches)))

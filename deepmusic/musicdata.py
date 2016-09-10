@@ -372,15 +372,16 @@ class MusicData:
 
         return batches, names
 
-    def convert_to_songs(self, outputs):
+    def convert_to_piano_rolls(self, outputs):
         """ Create songs from the decoder outputs.
+        Reshape the list of outputs to list of piano rolls
         Args:
             outputs (List[np.array]): The list of the predictions of the decoder
         Return:
-            List[Song]: the list of the songs (one song by batch)
+            List[np.array]: the list of the songs (one song by batch) as piano roll
         """
 
-        # Step 1: Extract the batches and recreate the array for each batch
+        # Extract the batches and recreate the array for each batch
         piano_rolls = []
         for i in range(outputs[0].shape[0]):  # Iterate over the batches
             piano_roll = None
@@ -392,9 +393,4 @@ class MusicData:
                     piano_roll = np.append(piano_roll, [outputs[j][i, :]], axis=0)
             piano_rolls.append(piano_roll.T)
 
-        # Step 2: Create the song from the array
-        songs = []
-        for array in piano_rolls:
-            songs.append(self._convert_array2song(array))
-
-        return songs
+        return piano_rolls

@@ -18,7 +18,7 @@ Just an unorganised list of ideas or models to test.
 
 What note representation ?
 
-* Simpler model could be to have a single vector as input of 88 (keys) for each 1/16 of bars: the vector contains 0 if nothing has been played or 1 if the key has been pressed (note duration not taken into account). The song is represented by a giant matrix: (88*(16*nbBars)). This representation will be referred as grid input (1d or 2d if we add the temporal dimension to the input tensor).
+* Simpler model could be to have a single vector as input of 88 (keys) for each 1/16 of bars: the vector contains 0 if nothing has been played or 1 if the key has been pressed (note duration not taken into account). The song is represented by a giant matrix: (88\*(16\*nbBars)). This representation will be referred as grid input (1d or 2d if we add the temporal dimension to the input tensor).
 * Artificially increase dataset: transpose musical pieces ?
 * Midi vs ABC representation: one network just print the basic melody in ABC notation (text file as it was a char-rnn), the second network play this file as if it was improvising, playing chords and melody on some based tablature (as jazz man do).
 * Maybe try something closer of the musical theory (1rst, 2nd, 3rd degree instead of A,D,C) or something closer to the physic (frequency ? relative distance behind the note). Somehow the model should understand that 2 notes like C3 and C4 "feel" the sames.
