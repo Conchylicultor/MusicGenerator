@@ -124,7 +124,7 @@ class Composer:
         training_args.add_argument('--num_epochs', type=int, default=0, help='maximum number of epochs to run (0 for infinity)')
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
-        training_args.add_argument('--learning_rate', type=float, default=0.001, help='Learning rate')
+        training_args.add_argument('--learning_rate', type=str, nargs='+', default=[Model.LearningRatePolicy.CST, '0.0001'], help='Learning rate (available: {})'.format(Model.LearningRatePolicy.get_policies()))
         training_args.add_argument('--testing_curve', type=int, default=10, help='Also record the testing curve each every x iteration (given by the parameter)')
 
         return parser.parse_args(args)
@@ -213,7 +213,7 @@ class Composer:
                 print()
                 print('------- Epoch {} (lr={}) -------'.format(
                     '{}/{}'.format(e, self.args.num_epochs) if self.args.num_epochs else '{}'.format(e),
-                    self.args.learning_rate)
+                    self.model.learning_rate_policy.get_learning_rate(self.glob_step))
                 )
 
                 batches = None
@@ -295,7 +295,7 @@ class Composer:
                     # TODO: Include infos on potentially interesting songs (include metric in the name ?), we should try to detect
                     # the loops, simple metric: nb of generated notes, nb of unique notes (Metric: 2d 
                     # tensor [NB_NOTES, nb_of_time_the_note_is played], could plot histogram normalized by nb of 
-                    # notes). Could print pinao roll instead
+                    # notes). Could print piano roll instead
                     base_name_common = base_name + '-' + str(i) + '-' + name
                     song = self.music_data._convert_array2song(array)
                     ImgConnector.write_song(array, os.path.join(base_dir, base_name_common + '.png'))
@@ -346,8 +346,9 @@ class Composer:
                 # WARNING: No confirmation is asked. All subfolders will be deleted
                 for root, dirs, files in os.walk(self.model_dir, topdown=False):
                     for name in files:
-                        print('Removing {}'.format(name))
-                        os.remove(os.path.join(root, name))
+                        file_path = os.path.join(root, name)
+                        print('Removing {}'.format(file_path))
+                        os.remove(file_path)
         else:
             print('No previous model found, starting from clean directory: {}'.format(self.model_dir))
 
@@ -398,7 +399,7 @@ class Composer:
             self.args.target_weights = config['Network'].get('target_weights')
             self.args.scheduled_sampling = config['Network'].get('scheduled_sampling').split(' ')
 
-            self.args.learning_rate = config['Training'].getfloat('learning_rate')
+            self.args.learning_rate = config['Training'].get('learning_rate').split(' ')
             self.args.batch_size = config['Training'].getint('batch_size')
             self.args.save_every = config['Training'].getint('save_every')
             self.args.ratio_dataset = config['Training'].getfloat('ratio_dataset')
@@ -432,7 +433,7 @@ class Composer:
         
         # Keep track of the learning params (are not model dependent so can be manually edited)
         config['Training'] = {}
-        config['Training']['learning_rate'] = str(self.args.learning_rate)
+        config['Training']['learning_rate'] = ' '.join(self.args.learning_rate)
         config['Training']['batch_size'] = str(self.args.batch_size)
         config['Training']['save_every'] = str(self.args.save_every)
         config['Training']['ratio_dataset'] = str(self.args.ratio_dataset)
@@ -455,7 +456,7 @@ class Composer:
         print('target_weights: {}'.format(self.args.target_weights))
         print('scheduled_sampling: {}'.format(' '.join(self.args.scheduled_sampling)))
 
-        print('learning_rate: {}'.format(self.args.learning_rate))
+        print('learning_rate: {}'.format(' '.join(self.args.learning_rate)))
         print('batch_size: {}'.format(self.args.batch_size))
         print('save_every: {}'.format(self.args.save_every))
         print('ratio_dataset: {}'.format(self.args.ratio_dataset))

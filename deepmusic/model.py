@@ -131,6 +131,74 @@ class Model:
             """
             return self.sampling_policy_fct(glob_step)
 
+    class LearningRatePolicy:
+        """ Contains the different policies for the learning rate decay
+        """
+        CST = 'cst'  # Fixed learning rate over all steps (default behavior)
+        STEP = 'step'  # We divide the learning rate every x iterations
+        EXPONENTIAL = 'exponential'  #
+
+        @staticmethod
+        def get_policies():
+            """ Return the list of the different modes
+            Useful when parsing the command lines arguments
+            """
+            return [
+                Model.LearningRatePolicy.CST,
+                Model.LearningRatePolicy.STEP,
+                Model.LearningRatePolicy.EXPONENTIAL
+            ]
+
+        def __init__(self, args):
+            """
+            Args:
+                args: parameters of the model
+            """
+            self.learning_rate_fct = None
+
+            assert args.learning_rate
+            assert len(args.learning_rate) > 0
+
+            policy = args.learning_rate[0]
+
+            if policy == Model.LearningRatePolicy.CST:
+                if not len(args.learning_rate) == 2:
+                    raise ValueError('Learning rate cst policy should be on the form: {} lr_value'.format(Model.LearningRatePolicy.CST))
+                self.learning_rate_init = float(args.learning_rate[1])
+                self.learning_rate_fct = self._lr_cst
+
+            elif policy == Model.LearningRatePolicy.STEP:
+                if not len(args.learning_rate) == 3:
+                    raise ValueError('Learning rate step policy should be on the form: {} lr_init decay_period'.format(Model.LearningRatePolicy.STEP))
+                self.learning_rate_init = float(args.learning_rate[1])
+                self.decay_period = int(args.learning_rate[2])
+                self.learning_rate_fct = self._lr_step
+
+            elif policy == Model.LearningRatePolicy.EXPONENTIAL:
+                raise NotImplementedError('Exponential learning rate policy not implemented yet, please consider another policy')
+
+            else:
+                raise ValueError('Unknown chosen learning rate policy: {}'.format(policy))
+
+        def _lr_cst(self, glob_step):
+            """ Just a constant learning rate
+            """
+            return self.learning_rate_init
+
+        def _lr_step(self, glob_step):
+            """ Every decay period, the learning rate is divided by 2
+            """
+            return self.learning_rate_init / 2**(glob_step//self.decay_period)
+
+        def get_learning_rate(self, glob_step):
+            """ Return the learning rate associated at the current training step
+            Args:
+                glob_step (int): Number of iterations since the beginning of training
+            Return:
+                float: the learning rate at the given step
+            """
+            return self.learning_rate_fct(glob_step)
+
     def __init__(self, args):
         """
         Args:
@@ -144,6 +212,7 @@ class Model:
         self.inputs = None
         self.targets = None
         self.use_prev = None  # Boolean tensor which say at Graph evaluation time if we use the input placeholder or the previous output.
+        self.current_learning_rate = None  # Allow to have a dynamic learning rate
 
         # Main operators
         self.opt_op = None  # Optimizer
@@ -153,6 +222,7 @@ class Model:
         # Other options
         self.target_weights_policy = None
         self.schedule_policy = None
+        self.learning_rate_policy = None
 
         # Construct the graphs
         self._build_network()
@@ -249,7 +319,8 @@ class Model:
             # classification problems
 
             self.schedule_policy = Model.ScheduledSamplingPolicy(self.args)
-            self.target_weights_policy = Model.TargetWeightsPolicy(self.args)  # Load the chosen policy
+            self.target_weights_policy = Model.TargetWeightsPolicy(self.args)
+            self.learning_rate_policy = Model.LearningRatePolicy(self.args)  # Load the chosen policies
 
             # TODO: If train on different length, check that the loss is proportional to the length or average ???
             loss_fct = tf.nn.seq2seq.sequence_loss(
@@ -258,19 +329,21 @@ class Model:
                 [tf.constant(self.target_weights_policy.get_weight(i), shape=self.targets[0].get_shape()) for i in range(len(self.targets))],  # Weights
                 softmax_loss_function=tf.nn.sigmoid_cross_entropy_with_logits,
                 average_across_timesteps=False,  # I think it's best for variables length sequences (specially with the target weights=0), isn't it (it implies also that short sequences are less penalized than long ones) ? (TODO: For variables length sequences, be careful about the target weights)
-                average_across_batch=False  # Penalize by sample (should allows dynamic batch size)
+                average_across_batch=False  # Penalize by sample (should allows dynamic batch size) Warning: need to tune the learning rate
             )
             tf.scalar_summary('training_loss', loss_fct)  # Keep track of the cost
 
-            # TODO: Also keep track of magnitudes (how much is updated)
+            self.current_learning_rate = tf.placeholder(tf.float32, [])
 
             # Initialize the optimizer
             opt = tf.train.AdamOptimizer(
-                learning_rate=self.args.learning_rate,
+                learning_rate=self.current_learning_rate,
                 beta1=0.9,
                 beta2=0.999,
                 epsilon=1e-08
             )
+
+            # TODO: Also keep track of magnitudes (how much is updated)
             self.opt_op = opt.minimize(loss_fct)
     
     def step(self, batch, train_set=True, glob_step=-1):
@@ -289,8 +362,12 @@ class Model:
         feed_dict = {}
         ops = None
 
+        # Feed placeholders and choose the ops
         if not self.args.test:  # Training
-            # Feed placeholder
+            if train_set:
+                assert glob_step >= 0
+                feed_dict[self.current_learning_rate] = self.learning_rate_policy.get_learning_rate(glob_step)
+
             for i in range(self.args.sample_length):
                 feed_dict[self.inputs[i]] = batch.inputs[i]
                 feed_dict[self.targets[i]] = batch.targets[i]
@@ -302,7 +379,6 @@ class Model:
 
             ops = (self.opt_op,)
         else:  # Testing (batch_size == 1)
-            # Feed placeholder
             # TODO: What to put for initialisation state (empty ? random ?) ?
             # TODO: Modify use_prev
             for i in range(self.args.sample_length):
