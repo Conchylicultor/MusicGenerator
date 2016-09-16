@@ -81,6 +81,9 @@ class Composer:
         self.CONFIG_FILENAME = 'params.ini'
         self.CONFIG_VERSION = '0.1'  # Ensure to raise a warning if there is a change in the format
 
+        self.TRAINING_VISUALIZATION_STEP = 1000  # Plot a training sample every x iterations (Warning: There is a really low probability that on a epoch, it's always the same testing bach which is visualized)
+        self.TRAINING_VISUALIZATION_DIR = 'progression'
+
     @staticmethod
     def _parse_args(args):
         """
@@ -207,7 +210,7 @@ class Composer:
 
         try:  # If the user exit while training, we still try to save the model
             e = 0
-            while self.args.num_epochs == 0 or e < self.args.num_epochs:
+            while self.args.num_epochs == 0 or e < self.args.num_epochs:  # Main training loop (infinite if num_epoch==0)
                 e += 1
 
                 print()
@@ -216,34 +219,56 @@ class Composer:
                     self.model.learning_rate_policy.get_learning_rate(self.glob_step))
                 )
 
-                batches = None
-                batches_test = None
+                # Explicit garbage collector call (clear the previous batches)
                 gc.collect()  # TODO: Better memory management (use generators,...)
 
-                batches = self.music_data.get_batches()
+                batches_train = self.music_data.get_batches(train_set=True)
+                batches_test = self.music_data.get_batches(train_set=False)
 
-                if self.args.testing_curve:
-                    batches_test = self.music_data.get_batches(train_set=False)
-
-                # Also update learning parameters eventually ??
+                # Also update learning parameters eventually ?? (Some is done in the model class with the policy classes)
 
                 tic = datetime.datetime.now()
-                for next_batch in tqdm(batches, desc='Training'):
-                    # Training pass
-                    ops, feed_dict = self.model.step(next_batch, train_set=True, glob_step=self.glob_step)
-                    assert len(ops) == 1  # gradient_update_op
-                    summary, _ = self.sess.run((merged_summaries,) + ops, feed_dict)
-                    self.writer.add_summary(summary, self.glob_step)
+                for next_batch in tqdm(batches_train, desc='Training'):  # Iterate over the batches
+                    # Indicate if the output should be computed or not
+                    is_output_visualized = self.glob_step % self.TRAINING_VISUALIZATION_STEP == 0
 
-                    if self.args.testing_curve and self.glob_step % self.args.testing_curve == 0:
+                    # Training pass
+                    ops, feed_dict = self.model.step(
+                        next_batch,
+                        train_set=True,
+                        glob_step=self.glob_step,
+                        ret_output=is_output_visualized
+                    )
+                    outputs_train = self.sess.run((merged_summaries,) + ops, feed_dict)
+                    self.writer.add_summary(outputs_train[0], self.glob_step)
+
+                    # Testing pass (record the testing curve and visualize some testing predictions)
+                    if is_output_visualized or (self.args.testing_curve and self.glob_step % self.args.testing_curve == 0):
                         next_batch_test = batches_test[self.glob_step % len(batches_test)]  # Generate test batches in a cycling way (test set smaller than train set)
-                        _, feed_dict = self.model.step(next_batch_test, train_set=False)
-                        summary = self.sess.run(merged_summaries, feed_dict)
-                        self.writer_test.add_summary(summary, self.glob_step)
+                        ops, feed_dict = self.model.step(
+                            next_batch_test,
+                            train_set=False,
+                            ret_output=is_output_visualized
+                        )
+                        outputs_test = self.sess.run((merged_summaries,) + ops, feed_dict)
+                        self.writer_test.add_summary(outputs_test[0], self.glob_step)
+
+                    # Some visualisation (we compute some training/testing samples and compare them to the ground truth)
+                    if is_output_visualized:
+                        visualization_base_name = os.path.join(self.model_dir, self.TRAINING_VISUALIZATION_DIR, str(self.glob_step))
+                        tqdm.write('Visualizing: ' + visualization_base_name)
+                        # Record:
+                        # * Training/testing:
+                        #   * Prediction/ground truth:
+                        #     * piano roll
+                        #     * midi file
+                        # Format name: <glob_step>-<train/test>-<pred/truth>.<png/mid>
 
                     # Checkpoint
                     self.glob_step += 1
                     if self.glob_step % self.args.save_every == 0:
+                        #outputs_test[-1]
+                        #outputs_train[-1]  # The network output will always be the last operator
                         self._save_session(self.sess)
 
                 toc = datetime.datetime.now()
@@ -282,8 +307,9 @@ class Composer:
                 ops, feed_dict = self.model.step(batch)
                 assert len(ops) == 1  # output
                 outputs = self.sess.run(ops[0], feed_dict)
-                # TODO: Save the output as image (hotmap red/blue to see the prediction confidence)
 
+                # Save the output as image (color map red/blue to see the prediction confidence)
+                # TODO: Factorize (move that in a new MusicData method ?)
                 piano_rolls = self.music_data.convert_to_piano_rolls(outputs)
 
                 model_dir, model_filename = os.path.split(model_name)

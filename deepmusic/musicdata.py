@@ -262,6 +262,9 @@ class MusicData:
         # TODO: Create batches (randomly cut each song in some small parts (need to know the total length for that)
         # then create the big matrix (NB_NOTE*sample_length) and turn that into batch). If process too long,
         # could save the created batches in a new folder, data/samples or save/model.
+
+        # TODO: Create batches from multiples length (buckets). How to change the loss functions weights (longer
+        # sequences more penalized ?)
         
         # TODO: Optimize memory management
 
@@ -300,7 +303,7 @@ class MusicData:
             for i in range(nb_samples//self.args.batch_size):
                 yield sub_songs[i*self.args.batch_size:(i+1)*self.args.batch_size]
 
-        for samples in gen_next_samples():  # TODO: tqdm with persist = False
+        for samples in gen_next_samples():  # TODO: tqdm with persist = False / will this work with generators ?
             batch = Batch()
 
             # samples has shape [batch_size, NB_NOTES, sample_subsampling_length]

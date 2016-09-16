@@ -38,7 +38,7 @@ class Model:
         """
         NONE = 'none'  # All weights equals (=1.0) (default behavior)
         LINEAR = 'linear'  # The first outputs are less penalized than the last ones
-        STEP = 'step'  # We start penalizing only after self.args.target_weight_step
+        STEP = 'step'  # We start penalizing only after x steps (enco/deco behavior)
 
         def __init__(self, args):
             """
@@ -346,21 +346,24 @@ class Model:
             # TODO: Also keep track of magnitudes (how much is updated)
             self.opt_op = opt.minimize(loss_fct)
     
-    def step(self, batch, train_set=True, glob_step=-1):
+    def step(self, batch, train_set=True, glob_step=-1, ret_output=False):
         """ Forward/training step operation.
-        Does not perform run on itself but just return the operators to do so. Those have then to be run
+        Does not perform run on itself but just return the operators to do so. Those have then to be run by the
+        main program.
+        If the output operator is returned, it will always be the last one on the list
         Args:
             batch (Batch): Input data on testing mode, input and target on output mode
             train_set (Bool): indicate if the batch come from the test/train set
             glob_step (int): indicate the global step for the schedule sampling
+            ret_output (Bool): for the training mode, if true,
         Return:
-            (ops), dict: A tuple of the (training_step,) operator or (outputs,) in testing mode with the associated feed dictionary
+            Tuple[ops], dict: The list of the operators to run (training_step or outputs) with the associated feed dictionary
         """
         # TODO: Could optimize feeding between train/test/generating (compress code)
 
         # Feed the dictionary
         feed_dict = {}
-        ops = None
+        ops = ()  # For small length, it seems (from my investigations) that tuples are faster than list for merging
 
         # Feed placeholders and choose the ops
         if not self.args.test:  # Training
@@ -377,8 +380,11 @@ class Model:
                 else:
                     feed_dict[self.use_prev[i]] = False
 
-            ops = (self.opt_op,)
-        else:  # Testing (batch_size == 1)
+            if train_set:
+                ops += (self.opt_op,)
+            if ret_output:
+                ops += (self.outputs,)
+        else:  # Generating (batch_size == 1)
             # TODO: What to put for initialisation state (empty ? random ?) ?
             # TODO: Modify use_prev
             for i in range(self.args.sample_length):
@@ -386,10 +392,10 @@ class Model:
                     feed_dict[self.inputs[i]] = batch.inputs[i]
                     feed_dict[self.use_prev[i]] = False
                 else:  # Even not used, we still need to feed a placeholder
-                    feed_dict[self.inputs[i]] = batch.inputs[0]  # Could be anything but we need it to be of the right shape
+                    feed_dict[self.inputs[i]] = batch.inputs[0]  # Could be anything but we need it to be from the right shape
                     feed_dict[self.use_prev[i]] = True  # When we don't have an input, we use the previous output instead
 
-            ops = (self.outputs,)
+            ops += (self.outputs,)
 
         # Return one pass operator
         return ops, feed_dict
