@@ -45,7 +45,7 @@ class ImgConnector:
         """ Save the song on disk
         Args:
             piano_roll (np.array): a song object containing the tracks and melody
-            filename (str): the path were to save the song
+            filename (str): the path were to save the song (don't add the file extension)
         """
         note_played = piano_roll > 0.5
         piano_roll_int = np.uint8(piano_roll*255)
@@ -58,4 +58,8 @@ class ImgConnector:
 
         # TODO: We could insert a first column indicating the piano keys (black/white key)
 
-        cv.imwrite(filename, img)
+        cv.imwrite(filename + '.png', img)
+
+    @staticmethod
+    def get_input_type():
+        return 'array'

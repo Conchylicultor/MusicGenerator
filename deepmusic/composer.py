@@ -62,7 +62,7 @@ class Composer:
 
         # Task specific objects
         self.music_data = None  # Dataset
-        self.model = None  # Sequence to sequence model
+        self.model = None  # Base model class
 
         # TensorFlow utilities for convenience saving/logging
         self.writer = None
@@ -83,6 +83,7 @@ class Composer:
 
         self.TRAINING_VISUALIZATION_STEP = 1000  # Plot a training sample every x iterations (Warning: There is a really low probability that on a epoch, it's always the same testing bach which is visualized)
         self.TRAINING_VISUALIZATION_DIR = 'progression'
+        self.TESTING_VISUALIZATION_DIR = 'midi'  # Would 'generated', 'output' or 'testing' be a best folder name ?
 
     @staticmethod
     def _parse_args(args):
@@ -243,6 +244,8 @@ class Composer:
                     self.writer.add_summary(outputs_train[0], self.glob_step)
 
                     # Testing pass (record the testing curve and visualize some testing predictions)
+                    # TODO: It makes no sense to completely disable the ground truth feeding (it's impossible to the
+                    # network to do a good prediction with only the first step)
                     if is_output_visualized or (self.args.testing_curve and self.glob_step % self.args.testing_curve == 0):
                         next_batch_test = batches_test[self.glob_step % len(batches_test)]  # Generate test batches in a cycling way (test set smaller than train set)
                         ops, feed_dict = self.model.step(
@@ -257,18 +260,15 @@ class Composer:
                     if is_output_visualized:
                         visualization_base_name = os.path.join(self.model_dir, self.TRAINING_VISUALIZATION_DIR, str(self.glob_step))
                         tqdm.write('Visualizing: ' + visualization_base_name)
-                        # Record:
-                        # * Training/testing:
-                        #   * Prediction/ground truth:
-                        #     * piano roll
-                        #     * midi file
-                        # Format name: <glob_step>-<train/test>-<pred/truth>.<png/mid>
+                        self._visualize_output(
+                            visualization_base_name,
+                            outputs_train[-1],
+                            outputs_test[-1]  # The network output will always be the last operator returned by model.step()
+                        )
 
                     # Checkpoint
-                    self.glob_step += 1
+                    self.glob_step += 1  # Iterate here to avoid saving at the first iteration
                     if self.glob_step % self.args.save_every == 0:
-                        #outputs_test[-1]
-                        #outputs_train[-1]  # The network output will always be the last operator
                         self._save_session(self.sess)
 
                 toc = datetime.datetime.now()
@@ -308,27 +308,52 @@ class Composer:
                 assert len(ops) == 1  # output
                 outputs = self.sess.run(ops[0], feed_dict)
 
-                # Save the output as image (color map red/blue to see the prediction confidence)
-                # TODO: Factorize (move that in a new MusicData method ?)
-                piano_rolls = self.music_data.convert_to_piano_rolls(outputs)
-
                 model_dir, model_filename = os.path.split(model_name)
-                base_dir = os.path.join(model_dir, 'midi')
-                base_name = model_filename[:-len(self.MODEL_EXT)]
-                if not os.path.exists(base_dir):
-                    os.makedirs(base_dir)
-                for i, array in enumerate(piano_rolls):  # Should be 1 (batch_size=1)
-                    # TODO: Include infos on potentially interesting songs (include metric in the name ?), we should try to detect
-                    # the loops, simple metric: nb of generated notes, nb of unique notes (Metric: 2d 
-                    # tensor [NB_NOTES, nb_of_time_the_note_is played], could plot histogram normalized by nb of 
-                    # notes). Could print piano roll instead
-                    base_name_common = base_name + '-' + str(i) + '-' + name
-                    song = self.music_data._convert_array2song(array)
-                    ImgConnector.write_song(array, os.path.join(base_dir, base_name_common + '.png'))
-                    MidiConnector.write_song(song, os.path.join(base_dir, base_name_common + '.mid'))
-                # TODO: Print song statistics (nb of generated notes,...)
+                model_dir = os.path.join(model_dir, self.TESTING_VISUALIZATION_DIR)
+                model_filename = model_filename[:-len(self.MODEL_EXT)] + '-' + name
+
+                # Save piano roll as image (color map red/blue to see the prediction confidence)
+                # Save the midi file
+                self.music_data.visit_recorder(
+                    outputs,
+                    model_dir,
+                    model_filename,
+                    [ImgConnector, MidiConnector]
+                )
+                # TODO: Print song statistics (nb of generated notes, closest songs in dataset ?, try to compute a
+                # score to indicate potentially interesting songs (low score if too repetitive) ?,...). Create new
+                # visited recorder class ?
+                # TODO: Include infos on potentially interesting songs (include metric in the name ?), we should try to detect
+                # the loops, simple metric: nb of generated notes, nb of unique notes (Metric: 2d
+                # tensor [NB_NOTES, nb_of_time_the_note_is played], could plot histogram normalized by nb of
+                # notes). Is piano roll enough ?
 
         print('Prediction finished, {} songs generated'.format(self.args.batch_size * len(model_list) * len(batches)))
+
+    def _visualize_output(self, visualization_base_name, outputs_train, outputs_test):
+        """ Record some result/generated songs during training.
+        This allow to see the training progression and get an idea of what the network really learned
+        Args:
+            visualization_base_name (str):
+            outputs_train: Output of the forward pass(training set)
+            outputs_test: Output of the forward pass (testing set)
+        """
+        # Record:
+        # * Training/testing:
+        #   * Prediction/ground truth:
+        #     * piano roll
+        #     * midi file
+        # Format name: <glob_step>-<train/test>-<pred/truth>-<mini_batch_id>.<png/mid>
+        # TODO: Also records the ground truth
+
+        model_dir, model_filename = os.path.split(visualization_base_name)
+        for output, set_name in [(outputs_train, 'train'), (outputs_test, 'test')]:
+            self.music_data.visit_recorder(
+                output,
+                model_dir,
+                model_filename + '-' + set_name,
+                [ImgConnector, MidiConnector]
+            )
 
     def _restore_previous_model(self, sess):
         """ Restore or reset the model, depending of the parameters

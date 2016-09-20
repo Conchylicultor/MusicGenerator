@@ -375,7 +375,8 @@ class MusicData:
 
         return batches, names
 
-    def convert_to_piano_rolls(self, outputs):
+    @staticmethod
+    def _convert_to_piano_rolls(outputs):
         """ Create songs from the decoder outputs.
         Reshape the list of outputs to list of piano rolls
         Args:
@@ -397,3 +398,31 @@ class MusicData:
             piano_rolls.append(piano_roll.T)
 
         return piano_rolls
+
+    def visit_recorder(self, outputs, base_dir, base_name, recorders):
+        """ Save the predicted output songs using the given recorder
+        Args:
+            outputs (List[np.array]): The list of the predictions of the decoder
+            base_dir (str): Path were to save the outputs
+            base_name (str): filename of the output (without the extension)
+            recorders (List[Obj]): Interfaces called to convert the song into a file (ex: midi or png). The recorders
+                need to implement the method write_song (the method has to add the file extension) and the
+                method get_input_type.
+        """
+
+        if not os.path.exists(base_dir):
+            os.makedirs(base_dir)
+
+        piano_rolls = MusicData._convert_to_piano_rolls(outputs)
+
+        for i, array in enumerate(piano_rolls):  # Loop over batch_size
+            base_path = os.path.join(base_dir, base_name + '-' + str(i))
+            song = self._convert_array2song(array)
+            for recorder in recorders:
+                if recorder.get_input_type() == 'song':
+                    input = song
+                elif recorder.get_input_type() == 'array':
+                    input = array
+                else:
+                    raise ValueError('Unknown recorder input type.'.format(recorder.get_input_type()))
+                recorder.write_song(input, base_path)

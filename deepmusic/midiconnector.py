@@ -208,7 +208,7 @@ class MidiConnector:
         """ Save the song on disk
         Args:
             song (Song): a song object containing the tracks and melody
-            filename (str): the path were to save the song
+            filename (str): the path were to save the song (don't add the file extension)
         """
 
         midi_data = mido.MidiFile(ticks_per_beat=song.ticks_per_beat)
@@ -252,4 +252,8 @@ class MidiConnector:
 
                 new_track.append(message)
 
-        midi_data.save(filename)
+        midi_data.save(filename + '.mid')
+
+    @staticmethod
+    def get_input_type():
+        return 'song'
