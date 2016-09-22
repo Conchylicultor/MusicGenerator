@@ -19,6 +19,7 @@ Usually the first notes are quite randoms but after few bars, the network stabil
 I then applied this model on a larger dataset (400+ songs). Here are some samples of generated songs with this model:
 * [Sample 1](https://soundcloud.com/reivalk/basic-rnn-ragtime-1?in=reivalk/sets/music-generator-experiments)
 * [Sample 2](https://soundcloud.com/reivalk/basic-rnn-ragtime-2?in=reivalk/sets/music-generator-experiments)
+
 The originals generated midi files can be found in [this folder](midi/). I convert them to mp3 using the utility script present in the root directory.
 
 There are some problems with this model. One being that even if trained conjointly, the predictions are done independently. Each one of the 88 classifier do not concert the other ones before doing its prediction so for instance the network's part which predict if a E4 should be played has no way to know if G2 is predicted at the same time or not (one way to solve this issue could be to use CRF). Similarly, the neural network don't care about the relative order of the notes in the input vector. We could invert the keys on the keyboard and the prediction would be the same. To improve our model, the model should have a way to know that the interval between C4 and C4# is the same that the one between A3 and A3#. There are some architecture which could be worth exploring.
