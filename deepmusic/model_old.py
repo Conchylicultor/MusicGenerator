@@ -199,62 +199,6 @@ class Model:
             """
             return self.learning_rate_fct(glob_step)
 
-    class EncoderNetwork:
-        """ From the previous keyboard configuration, prepare the state for the next one
-        """
-        @staticmethod
-        def get_cell(prev_keyboard, prev_state):
-            prev_state_enco, prev_state_deco = prev_state
-
-            # TODO
-            next_state_enco = prev_state_enco
-
-            return next_state_enco
-
-    class DecoderNetwork:
-        """ Predict a keyboard configuration at step t
-        """
-        def __init__(self, args):
-            """
-            Args:
-                args: parameters of the model
-            """
-            self.args = args
-
-            # Projection on the keyboard
-            with tf.variable_scope('weights_note_projection'):
-                self.W = tf.get_variable(
-                    'weights',
-                    [self.args.hidden_size, music.NB_NOTES],
-                    initializer=tf.truncated_normal_initializer()  # TODO: Tune value (fct of hidden size)
-                )
-                self.b = tf.get_variable(
-                    'bias',
-                    [music.NB_NOTES],
-                    initializer=tf.constant_initializer()
-                )
-
-            # TODO: DELETE
-            with tf.variable_scope('weights_to_delete'):
-                self.W_to_delete = tf.get_variable(
-                    'weights',
-                    [music.NB_NOTES, self.args.hidden_size],
-                    initializer=tf.truncated_normal_initializer()
-                )
-
-        def _project_note(self, X):
-            with tf.name_scope('note_projection'):
-                return tf.matmul(X, self.W) + self.b  # [batch_size, NB_NOTE]
-
-        def get_cell(self, prev_keyboard, prev_state_enco):
-
-            # TODO
-            hidden_state = tf.matmul(prev_keyboard, self.W_to_delete)
-            next_keyboard = self._project_note(hidden_state)
-            next_state_deco = prev_state_enco  # Return the last state (Useful ?)
-
-            return next_keyboard, next_state_deco
-
     def __init__(self, args):
         """
         Args:
@@ -313,71 +257,54 @@ class Model:
                 for _ in range(self.args.sample_length)  # The first value will never be used (always takes self.input for the first step)
                 ]
 
-        # Define the network
-        class KeyboardCell(tf.nn.rnn_cell.RNNCell):
-            """ Cell which wrap the encoder/decoder network
-            """
-            def __init__(self, args):
-                self.args = args
-                self.init = False
-                self.decoder = None
+        # Projection on the keyboard
+        with tf.name_scope('note_projection_weights'):
+            W = tf.Variable(
+                tf.truncated_normal([self.args.hidden_size, music.NB_NOTES]),
+                name='weights'
+            )
+            b = tf.Variable(
+                tf.truncated_normal([music.NB_NOTES]),  # Tune the initializer ?
+                name='bias',
+            )
 
-            @property
-            def state_size(self):
-                raise NotImplementedError("Abstract method")
+        def project_note(X):
+            with tf.name_scope('note_projection'):
+                return tf.matmul(X, W) + b  # [batch_size, NB_NOTE]
 
-            @property
-            def output_size(self):
-                raise NotImplementedError("Abstract method")
+        # RNN network
+        rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
+        #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!, possible to use placeholder ?)
+        rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
 
-            def __call__(self, prev_keyboard, prev_state, scope=None):
-                """ Run the cell at step t
-                Args:
-                    prev_keyboard: keyboard configuration for the step t-1 (Ground truth or previous step)
-                    prev_state: a tuple (prev_state_enco, prev_state_deco)
-                    scope: TensorFlow scope
-                Return:
-                    Tuple: the keyboard configuration and the enco and deco states
-                """
-
-                if not self.init:
-                    with tf.variable_scope('weights_keyboard_cell'):
-                        self.decoder = Model.DecoderNetwork(self.args)
-
-                # TODO: If encoder act as VAE, we should sample here, from the previous state
-                with tf.variable_scope(scope or type(self).__name__):
-                    with tf.variable_scope("Encoder"):
-                        next_state_enco = Model.EncoderNetwork.get_cell(prev_keyboard, prev_state)
-                    with tf.variable_scope("Decoder"):  # Reset gate and update gate.
-                        next_keyboard, next_state_deco = self.decoder.get_cell(prev_keyboard, next_state_enco)
-                return next_keyboard, (next_state_enco, next_state_deco)
-
-        init_state_enco = None
-        init_state_deco = None  # Initial states (placeholder ? variables ? zeros ?), (What about keyboard ?)
+        initial_state = rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
 
         def loop_rnn(prev, i):
             """ Loop function used to connect one output of the rnn to the next input.
-            The previous input and returned value have to be from the same shape.
-            This is useful to use the same network for both training and testing.
-            Args:
-                prev: the previous predicted keyboard configuration at step i-1
-                i: the current step id (Warning: start at 1, 0 is ignored)
-            Return:
-                tf.Tensor: the input at the step i
+            Will re-adapt the output shape to the input one.
+            This is useful to use the same network for both training and testing. Warning: Because of the fixed
+            batch size, we have to predict batch_size sequences when testing.
             """
-            # Predict the output from prev and scale the result on [-1, 1] (TODO: Use tanh instead ? tanh=2*sigm(2*x)-1)
-            next_input = tf.sub(tf.mul(2.0, tf.nn.sigmoid(prev)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
+            # Predict the output from prev and scale the result on [-1, 1]
+            next_input = project_note(prev)
+            next_input = tf.sub(tf.mul(2.0, tf.nn.sigmoid(next_input)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
 
             # On training, we force the correct input, on testing, we use the previous output as next input
             return tf.cond(self.use_prev[i], lambda: next_input, lambda: self.inputs[i])
 
-        # TODO: Try attention decoder
-        self.outputs, self.final_state = tf.nn.seq2seq.rnn_decoder(
+        (outputs, self.final_state) = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=self.inputs,
-            initial_state=(init_state_enco, init_state_deco),
-            cell=KeyboardCell(self.args),
+            initial_state=initial_state,
+            cell=rnn_cell,
             loop_function=loop_rnn
         )
+
+        # Final projection
+        with tf.name_scope('final_output'):
+            self.outputs = []
+            for output in outputs:
+                proj = project_note(output)
+                self.outputs.append(proj)
 
         # For training only
         if not self.args.test:
