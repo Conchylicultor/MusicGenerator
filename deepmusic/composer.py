@@ -34,6 +34,7 @@ from deepmusic.musicdata import MusicData
 from deepmusic.midiconnector import MidiConnector
 from deepmusic.imgconnector import ImgConnector
 from deepmusic.model import Model
+from deepmusic.keyboardcell import KeyboardCell
 
 
 class Composer:
@@ -79,7 +80,7 @@ class Composer:
         self.MODEL_NAME_BASE = 'model'
         self.MODEL_EXT = '.ckpt'
         self.CONFIG_FILENAME = 'params.ini'
-        self.CONFIG_VERSION = '0.1'  # Ensure to raise a warning if there is a change in the format
+        self.CONFIG_VERSION = '0.3'  # Ensure to raise a warning if there is a change in the format
 
         self.TRAINING_VISUALIZATION_STEP = 1000  # Plot a training sample every x iterations (Warning: There is a really low probability that on a epoch, it's always the same testing bach which is visualized)
         self.TRAINING_VISUALIZATION_DIR = 'progression'
@@ -117,6 +118,8 @@ class Composer:
 
         # Network options (Warning: if modifying something here, also make the change on save/restore_params() )
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
+        nn_args.add_argument('--enco', choices=KeyboardCell.get_enco_choices(), default=KeyboardCell.get_enco_choices()[0], help='Encoder cell used')  # TODO: Could add other parameters with nargs='?' with '**' instead of '--', parsed inside KeyboardCell (+ cell.save/cell.load fct)
+        nn_args.add_argument('--deco', choices=KeyboardCell.get_deco_choices(), default=KeyboardCell.get_deco_choices()[0], help='Decoder cell used')
         nn_args.add_argument('--hidden_size', type=int, default=256, help='Size of one neural network layer')
         nn_args.add_argument('--num_layers', type=int, default=2, help='Nb of layers of the RNN')
         nn_args.add_argument('--scheduled_sampling', type=str, nargs='+', default=[Model.ScheduledSamplingPolicy.NONE], help='Define the schedule sampling policy. If set, have to indicates the parameters of the chosen policy')
@@ -445,6 +448,8 @@ class Composer:
             if not self.args.test:  # When testing, we don't use the training length
                 self.args.sample_length = config['General'].getint('sample_length')
 
+            self.args.enco = config['Network'].get('enco')
+            self.args.deco = config['Network'].get('deco')
             self.args.hidden_size = config['Network'].getint('hidden_size')
             self.args.num_layers = config['Network'].getint('num_layers')
             self.args.target_weights = config['Network'].get('target_weights')
@@ -477,6 +482,8 @@ class Composer:
         config['General']['sample_length'] = str(self.args.sample_length)
 
         config['Network'] = {}
+        config['Network']['enco'] = self.args.enco
+        config['Network']['deco'] = self.args.deco
         config['Network']['hidden_size'] = str(self.args.hidden_size)
         config['Network']['num_layers'] = str(self.args.num_layers)
         config['Network']['target_weights'] = self.args.target_weights  # Could be modified manually
@@ -502,6 +509,8 @@ class Composer:
         print('dataset_tag: {}'.format(self.args.dataset_tag))
         print('sample_length: {}'.format(self.args.sample_length))
 
+        print('enco: {}'.format(self.args.enco))
+        print('deco: {}'.format(self.args.deco))
         print('hidden_size: {}'.format(self.args.hidden_size))
         print('num_layers: {}'.format(self.args.num_layers))
         print('target_weights: {}'.format(self.args.target_weights))

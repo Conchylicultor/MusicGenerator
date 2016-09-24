@@ -20,6 +20,7 @@ Main cell which predict the next keyboard configuration
 
 """
 
+import collections
 import tensorflow as tf
 
 import deepmusic.songstruct as music
@@ -168,14 +169,34 @@ class DecoderNetworkPerceptron(DecoderNetwork):
 class KeyboardCell(tf.nn.rnn_cell.RNNCell):
     """ Cell which wrap the encoder/decoder network
     """
+    CHOICE_ENCO = collections.OrderedDict([  # Need ordered because the fist element will be the default choice
+        ('none', EncoderNetwork)
+    ])
+    CHOICE_DECO = collections.OrderedDict([
+        ('mlp', DecoderNetworkPerceptron)
+    ])
+
+    @staticmethod
+    def get_enco_choices():
+        """ Return the list of the different modes
+        Useful when parsing the command lines arguments
+        """
+        return list(KeyboardCell.CHOICE_ENCO.keys())
+
+    @staticmethod
+    def get_deco_choices():
+        """ Return the list of the different modes
+        Useful when parsing the command lines arguments
+        """
+        return list(KeyboardCell.CHOICE_DECO.keys())
 
     def __init__(self, args):
         self.args = args
         self.is_init = False
 
         # TODO: With self.args, see which network we have chosen (create map 'network name':class)
-        self.encoder = EncoderNetwork(self.args)
-        self.decoder = DecoderNetworkPerceptron(self.args)
+        self.encoder = KeyboardCell.CHOICE_ENCO[self.args.enco](self.args)
+        self.decoder = KeyboardCell.CHOICE_DECO[self.args.deco](self.args)
 
     @property
     def state_size(self):
