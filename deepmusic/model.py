@@ -315,6 +315,7 @@ class Model:
                 ]
 
         # Define the network
+        rnn_cell = KeyboardCell(self.args)
 
         def loop_rnn(prev, i):
             """ Loop function used to connect one output of the rnn to the next input.
@@ -326,8 +327,19 @@ class Model:
             Return:
                 tf.Tensor: the input at the step i
             """
-            # Predict the output from prev and scale the result on [-1, 1] (TODO: Use tanh instead ? tanh=2*sigm(2*x)-1)
-            next_input = tf.sub(tf.mul(2.0, tf.nn.sigmoid(prev)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
+            def activate_and_scale(X):
+                """ Predict the output from prev and scale the result on [-1, 1]
+                Use sigmoid activation
+                Args:
+                    X (tf.Tensor): the input
+                Return:
+                    tf.Ops: the activate_and_scale operator
+                """
+                # TODO: Use tanh instead ? tanh=2*sigm(2*x)-1
+                with tf.name_scope('activate_and_scale'):
+                    return tf.sub(tf.mul(2.0, tf.nn.sigmoid(X)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
+
+            next_input = activate_and_scale(prev)
 
             # On training, we force the correct input, on testing, we use the previous output as next input
             return tf.cond(self.use_prev[i], lambda: next_input, lambda: self.inputs[i])
@@ -335,8 +347,8 @@ class Model:
         # TODO: Try attention decoder
         self.outputs, self.final_state = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=self.inputs,
-            initial_state=KeyboardCell.init_state(),
-            cell=KeyboardCell(self.args),
+            initial_state=rnn_cell.init_state(),
+            cell=rnn_cell,
             loop_function=loop_rnn
         )
 
