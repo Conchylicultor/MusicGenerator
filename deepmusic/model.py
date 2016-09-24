@@ -24,6 +24,7 @@ import numpy as np  # To generate random numbers
 import tensorflow as tf
 
 from deepmusic.musicdata import Batch
+from deepmusic.keyboardcell import KeyboardCell
 import deepmusic.songstruct as music
 
 
@@ -314,46 +315,6 @@ class Model:
                 ]
 
         # Define the network
-        class KeyboardCell(tf.nn.rnn_cell.RNNCell):
-            """ Cell which wrap the encoder/decoder network
-            """
-            def __init__(self, args):
-                self.args = args
-                self.init = False
-                self.decoder = None
-
-            @property
-            def state_size(self):
-                raise NotImplementedError("Abstract method")
-
-            @property
-            def output_size(self):
-                raise NotImplementedError("Abstract method")
-
-            def __call__(self, prev_keyboard, prev_state, scope=None):
-                """ Run the cell at step t
-                Args:
-                    prev_keyboard: keyboard configuration for the step t-1 (Ground truth or previous step)
-                    prev_state: a tuple (prev_state_enco, prev_state_deco)
-                    scope: TensorFlow scope
-                Return:
-                    Tuple: the keyboard configuration and the enco and deco states
-                """
-
-                if not self.init:
-                    with tf.variable_scope('weights_keyboard_cell'):
-                        self.decoder = Model.DecoderNetwork(self.args)
-
-                # TODO: If encoder act as VAE, we should sample here, from the previous state
-                with tf.variable_scope(scope or type(self).__name__):
-                    with tf.variable_scope("Encoder"):
-                        next_state_enco = Model.EncoderNetwork.get_cell(prev_keyboard, prev_state)
-                    with tf.variable_scope("Decoder"):  # Reset gate and update gate.
-                        next_keyboard, next_state_deco = self.decoder.get_cell(prev_keyboard, next_state_enco)
-                return next_keyboard, (next_state_enco, next_state_deco)
-
-        init_state_enco = None
-        init_state_deco = None  # Initial states (placeholder ? variables ? zeros ?), (What about keyboard ?)
 
         def loop_rnn(prev, i):
             """ Loop function used to connect one output of the rnn to the next input.
@@ -374,7 +335,7 @@ class Model:
         # TODO: Try attention decoder
         self.outputs, self.final_state = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=self.inputs,
-            initial_state=(init_state_enco, init_state_deco),
+            initial_state=KeyboardCell.init_state(),
             cell=KeyboardCell(self.args),
             loop_function=loop_rnn
         )
