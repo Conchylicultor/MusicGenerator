@@ -43,7 +43,7 @@ def single_layer_perceptron(shape, scope_name):
         W = tf.get_variable(
             'weights',
             shape,
-            initializer=tf.truncated_normal_initializer()  # TODO: Tune value (fct of hidden size)
+            initializer=tf.truncated_normal_initializer()  # TODO: Tune value (fct of input size: 1/sqrt(input_dim))
         )
         b = tf.get_variable(
             'bias',
@@ -60,6 +60,20 @@ def single_layer_perceptron(shape, scope_name):
 
     return project_fct
 
+def get_rnn_cell(args, scope_name):
+    """ Return RNN cell, constructed from the parameters
+    Args:
+        args: the rnn parameters
+        scope_name (str): encapsulate variables
+    Return:
+        tf.RNNCell: a cell
+    """
+    with tf.variable_scope('weights_' + scope_name):
+        rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
+        #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!, possible to use placeholder ?)
+        rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * args.num_layers, state_is_tuple=True)
+    return rnn_cell
+
 
 class EncoderNetwork:
     """ From the previous keyboard configuration, prepare the state for the next one
@@ -74,6 +88,34 @@ class EncoderNetwork:
             args: parameters of the model
         """
         self.args = args
+
+    def build(self):
+        """ Initialize the weights of the model
+        """
+
+    def init_state(self):
+        """ Return the initial cell state
+        """
+        return None
+
+    def get_cell(self, prev_keyboard, prev_state):
+        prev_state_enco, prev_state_deco = prev_state
+
+        # This simple class just pass the previous state
+        next_state_enco = prev_state_enco
+
+        return next_state_enco
+
+
+class EncoderNetworkRnn(EncoderNetwork):
+    """ Read each keyboard configuration note by note and encode it's configuration
+    """
+    def __init__(self, args):
+        """
+        Args:
+            args: parameters of the model
+        """
+        super().__init__(args)
 
     def build(self):
         """ Initialize the weights of the model
@@ -128,8 +170,62 @@ class DecoderNetwork:
         raise NotImplementedError('Abstract class')
 
 
+class DecoderNetworkRNN(DecoderNetwork):
+    """ Predict a keyboard configuration at step t
+    Use a RNN to predict the next configuration
+    """
+    def __init__(self, args):
+        """
+        Args:
+            args: parameters of the model
+        """
+        super().__init__(args)
+        self.rnn_cell = None
+        self.project_key = None  # Fct which project the decoder output into a single key space
+
+    def build(self):
+        """ Initialize the weights of the model
+        """
+        self.rnn_cell = get_rnn_cell(self.args, "deco_cell")
+        self.project_key = single_layer_perceptron([self.args.hidden_size, 1],
+                                                   'project_key')
+
+    def init_state(self):
+        """ Return the initial cell state
+        """
+        return None
+
+    def get_cell(self, prev_keyboard, prev_state_enco):
+        """ a RNN
+        See parent class for arguments details
+        """
+        # TODO: Temporary
+        prev_state_enco = self.rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
+
+        axis = 1  # The first dimension is the batch, we split the keys
+        #assert prev_keyboard.get_shape()[axis].value == music.NB_NOTES
+        inputs = tf.split(axis, music.NB_NOTES, prev_keyboard)
+
+        outputs, final_state = tf.nn.seq2seq.rnn_decoder(
+            decoder_inputs=inputs,
+            initial_state=prev_state_enco,
+            cell=self.rnn_cell
+        )
+
+        # Is it better to do the projection before or after the packing ?
+        next_keys = []
+        for output in outputs:
+            next_keys.append(self.project_key(output))
+
+        next_keyboard = tf.concat(axis, next_keys)
+
+        print(next_keyboard)
+
+        return next_keyboard, final_state
+
+
 class DecoderNetworkPerceptron(DecoderNetwork):
-    """ Single layer perceptron
+    """ Single layer perceptron. Just a proof of concept for the architecture
     """
     def __init__(self, args):
         """
@@ -170,9 +266,11 @@ class KeyboardCell(tf.nn.rnn_cell.RNNCell):
     """ Cell which wrap the encoder/decoder network
     """
     CHOICE_ENCO = collections.OrderedDict([  # Need ordered because the fist element will be the default choice
-        ('none', EncoderNetwork)
+        ('none', EncoderNetwork),
+        ('rnn', EncoderNetworkRnn)
     ])
     CHOICE_DECO = collections.OrderedDict([
+        ('rnn', DecoderNetworkRNN),
         ('mlp', DecoderNetworkPerceptron)
     ])
 
