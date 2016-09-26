@@ -99,6 +99,13 @@ class EncoderNetwork:
         return None
 
     def get_cell(self, prev_keyboard, prev_state):
+        """ Predict the next keyboard state
+        Args:
+            prev_keyboard (tf.Tensor): the previous keyboard configuration
+            prev_state (Tuple): the previous decoder state
+        Return:
+            tf.Tensor: the final encoder state
+        """
         prev_state_enco, prev_state_deco = prev_state
 
         # This simple class just pass the previous state
@@ -116,24 +123,35 @@ class EncoderNetworkRnn(EncoderNetwork):
             args: parameters of the model
         """
         super().__init__(args)
+        self.rnn_cell = None
 
     def build(self):
         """ Initialize the weights of the model
         """
-        pass
+        self.rnn_cell = get_rnn_cell(self.args, "deco_cell")
 
     def init_state(self):
         """ Return the initial cell state
         """
-        return None
+        return self.rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
 
     def get_cell(self, prev_keyboard, prev_state):
+        """ a RNN encoder
+        See parent class for arguments details
+        """
         prev_state_enco, prev_state_deco = prev_state
 
-        # This simple class just pass the previous state
-        next_state_enco = prev_state_enco
+        axis = 1  # The first dimension is the batch, we split the keys
+        assert prev_keyboard.get_shape()[axis].value == music.NB_NOTES
+        inputs = tf.split(axis, music.NB_NOTES, prev_keyboard)
 
-        return next_state_enco
+        _, final_state = tf.nn.rnn(
+            self.rnn_cell,
+            inputs,
+            initial_state=prev_state_deco
+        )
+
+        return final_state
 
 
 class DecoderNetwork:
@@ -193,23 +211,22 @@ class DecoderNetworkRNN(DecoderNetwork):
     def init_state(self):
         """ Return the initial cell state
         """
-        return None
+        return self.rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
 
     def get_cell(self, prev_keyboard, prev_state_enco):
-        """ a RNN
+        """ a RNN decoder
         See parent class for arguments details
         """
-        # TODO: Temporary
-        prev_state_enco = self.rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
 
         axis = 1  # The first dimension is the batch, we split the keys
-        #assert prev_keyboard.get_shape()[axis].value == music.NB_NOTES
+        assert prev_keyboard.get_shape()[axis].value == music.NB_NOTES
         inputs = tf.split(axis, music.NB_NOTES, prev_keyboard)
 
         outputs, final_state = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=inputs,
             initial_state=prev_state_enco,
             cell=self.rnn_cell
+            # TODO: Which loop function (should use prediction) ?
         )
 
         # Is it better to do the projection before or after the packing ?
@@ -218,8 +235,6 @@ class DecoderNetworkRNN(DecoderNetwork):
             next_keys.append(self.project_key(output))
 
         next_keyboard = tf.concat(axis, next_keys)
-
-        print(next_keyboard)
 
         return next_keyboard, final_state
 
@@ -266,8 +281,8 @@ class KeyboardCell(tf.nn.rnn_cell.RNNCell):
     """ Cell which wrap the encoder/decoder network
     """
     CHOICE_ENCO = collections.OrderedDict([  # Need ordered because the fist element will be the default choice
-        ('none', EncoderNetwork),
-        ('rnn', EncoderNetworkRnn)
+        ('rnn', EncoderNetworkRnn),
+        ('none', EncoderNetwork)
     ])
     CHOICE_DECO = collections.OrderedDict([
         ('rnn', DecoderNetworkRNN),
@@ -292,7 +307,7 @@ class KeyboardCell(tf.nn.rnn_cell.RNNCell):
         self.args = args
         self.is_init = False
 
-        # TODO: With self.args, see which network we have chosen (create map 'network name':class)
+        # Get the chosen enco/deco
         self.encoder = KeyboardCell.CHOICE_ENCO[self.args.enco](self.args)
         self.decoder = KeyboardCell.CHOICE_DECO[self.args.deco](self.args)
 
@@ -320,6 +335,8 @@ class KeyboardCell(tf.nn.rnn_cell.RNNCell):
                 # TODO: With self.args, see which network we have chosen (create map 'network name':class)
                 self.encoder.build()
                 self.decoder.build()
+
+                prev_state = self.encoder.init_state(), self.decoder.init_state()
                 self.is_init = True
 
         # TODO: If encoder act as VAE, we should sample here, from the previous state
@@ -331,7 +348,3 @@ class KeyboardCell(tf.nn.rnn_cell.RNNCell):
             with tf.variable_scope("Decoder"):  # Reset gate and update gate.
                 next_keyboard, next_state_deco = self.decoder.get_cell(prev_keyboard, next_state_enco)
         return next_keyboard, (next_state_enco, next_state_deco)
-
-    def init_state(self):
-        # Initial states (placeholder ? variables ? zeros ?), (What about the keyboard ?)
-        return self.encoder.init_state(), self.decoder.init_state()

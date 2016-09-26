@@ -315,7 +315,6 @@ class Model:
                 ]
 
         # Define the network
-        rnn_cell = KeyboardCell(self.args)
 
         def loop_rnn(prev, i):
             """ Loop function used to connect one output of the rnn to the next input.
@@ -347,8 +346,8 @@ class Model:
         # TODO: Try attention decoder
         self.outputs, self.final_state = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=self.inputs,
-            initial_state=rnn_cell.init_state(),
-            cell=rnn_cell,
+            initial_state=None,  # The initial state is defined inside KeyboardCell
+            cell=KeyboardCell(self.args),
             loop_function=loop_rnn
         )
 
