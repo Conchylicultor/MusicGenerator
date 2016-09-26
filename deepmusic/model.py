@@ -398,7 +398,7 @@ class Model:
         If the output operator is returned, it will always be the last one on the list
         Args:
             batch (Batch): Input data on testing mode, input and target on output mode
-            train_set (Bool): indicate if the batch come from the test/train set
+            train_set (Bool): indicate if the batch come from the test/train set (not used when generating)
             glob_step (int): indicate the global step for the schedule sampling
             ret_output (Bool): for the training mode, if true,
         Return:
@@ -419,8 +419,8 @@ class Model:
             for i in range(self.args.sample_length):
                 feed_dict[self.inputs[i]] = batch.inputs[i]
                 feed_dict[self.targets[i]] = batch.targets[i]
-                #if not train_set or np.random.rand() > self.schedule_policy.get_prev_threshold(glob_step)*self.target_weights_policy.get_weight(i):  # Regular Schedule sample (TODO: Try sampling with the weigths or a mix of weights/sampling)
-                if not train_set or np.random.rand() > self.schedule_policy.get_prev_threshold(glob_step):  # Weight the threshold by the target weights (don't schedule sample if weight=0)
+                #if np.random.rand() >= self.schedule_policy.get_prev_threshold(glob_step)*self.target_weights_policy.get_weight(i):  # Regular Schedule sample (TODO: Try sampling with the weigths or a mix of weights/sampling)
+                if np.random.rand() >= self.schedule_policy.get_prev_threshold(glob_step):  # Weight the threshold by the target weights (don't schedule sample if weight=0)
                     feed_dict[self.use_prev[i]] = True
                 else:
                     feed_dict[self.use_prev[i]] = False
