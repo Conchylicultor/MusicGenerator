@@ -226,7 +226,7 @@ class DecoderNetworkRNN(DecoderNetwork):
             decoder_inputs=inputs,
             initial_state=prev_state_enco,
             cell=self.rnn_cell
-            # TODO: Which loop function (should use prediction) ?
+            # TODO: Which loop function (should use prediction) ? : Should take the previous generated input/ground truth (as the global model loop_fct). Need to add a new bool placeholder
         )
 
         # Is it better to do the projection before or after the packing ?

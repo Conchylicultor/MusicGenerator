@@ -33,7 +33,7 @@ import gc
 from deepmusic.musicdata import MusicData
 from deepmusic.midiconnector import MidiConnector
 from deepmusic.imgconnector import ImgConnector
-from deepmusic.model import Model
+from deepmusic.model_old import Model
 from deepmusic.keyboardcell import KeyboardCell
 
 
@@ -123,7 +123,7 @@ class Composer:
         nn_args.add_argument('--hidden_size', type=int, default=256, help='Size of one neural network layer')
         nn_args.add_argument('--num_layers', type=int, default=2, help='Nb of layers of the RNN')
         nn_args.add_argument('--scheduled_sampling', type=str, nargs='+', default=[Model.ScheduledSamplingPolicy.NONE], help='Define the schedule sampling policy. If set, have to indicates the parameters of the chosen policy')
-        nn_args.add_argument('--target_weights', nargs='?', choices=Model.TargetWeightsPolicy.get_policies(), default=Model.TargetWeightsPolicy.NONE,
+        nn_args.add_argument('--target_weights', nargs='?', choices=Model.TargetWeightsPolicy.get_policies(), default=Model.TargetWeightsPolicy.LINEAR,
                              help='policy to choose the loss contribution of each step')
 
         # Training options (Warning: if modifying something here, also make the change on save/restore_params() )
