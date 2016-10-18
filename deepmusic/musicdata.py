@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2015 Conchylicultor. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,7 +40,7 @@ class Batch:
 class MusicData:
     """Dataset class
     """
-    
+
     def __init__(self, args):
         """Load all conversations
         Args:
@@ -70,7 +68,7 @@ class MusicData:
         self.songs = []
         self.songs_train = None
         self.songs_test = None
-        
+
         if not self.args.test:  # No need to load the dataset when testing
             self._restore_dataset()
 
@@ -265,7 +263,7 @@ class MusicData:
 
         # TODO: Create batches from multiples length (buckets). How to change the loss functions weights (longer
         # sequences more penalized ?)
-        
+
         # TODO: Optimize memory management
 
         # First part: Randomly extract subsamples of the songs
@@ -323,7 +321,7 @@ class MusicData:
                 batch.targets.append(target)
 
             batches.append(batch)
-        
+
         # Use tf.train.batch() ??
 
         # TODO: Save some batches as midi to see if correct

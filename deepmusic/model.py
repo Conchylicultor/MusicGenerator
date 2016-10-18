@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2015 Conchylicultor. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -78,7 +76,7 @@ class Model:
         NONE = 'none'  # No scheduled sampling (always take the given input)
         ALWAYS = 'always'  # Always samples from the predicted output
         LINEAR = 'linear'  # Gradually increase the sampling rate
-        
+
         def __init__(self, args):
             self.sampling_policy_fct = None
 
@@ -390,7 +388,7 @@ class Model:
 
             # TODO: Also keep track of magnitudes (how much is updated)
             self.opt_op = opt.minimize(loss_fct)
-    
+
     def step(self, batch, train_set=True, glob_step=-1, ret_output=False):
         """ Forward/training step operation.
         Does not perform run on itself but just return the operators to do so. Those have then to be run by the

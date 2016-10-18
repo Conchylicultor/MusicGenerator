@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2015 Conchylicultor. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -488,7 +486,7 @@ class Composer:
         config['Network']['num_layers'] = str(self.args.num_layers)
         config['Network']['target_weights'] = self.args.target_weights  # Could be modified manually
         config['Network']['scheduled_sampling'] = ' '.join(self.args.scheduled_sampling)
-        
+
         # Keep track of the learning params (are not model dependent so can be manually edited)
         config['Training'] = {}
         config['Training']['learning_rate'] = ' '.join(self.args.learning_rate)
@@ -499,7 +497,7 @@ class Composer:
 
         with open(os.path.join(self.model_dir, self.CONFIG_FILENAME), 'w') as config_file:
             config.write(config_file)
-    
+
     def _print_params(self):
         """ Print the current params
         """
