@@ -58,6 +58,7 @@ def single_layer_perceptron(shape, scope_name):
 
     return project_fct
 
+
 def get_rnn_cell(args, scope_name):
     """ Return RNN cell, constructed from the parameters
     Args:
@@ -150,6 +151,32 @@ class EncoderNetworkRnn(EncoderNetwork):
         )
 
         return final_state
+
+
+class EncoderNetworkEmbedding(EncoderNetwork):
+    """ Implement lookup for note embedding
+    """
+    def __init__(self, args):
+        """
+        Args:
+            args: parameters of the model
+        """
+        super().__init__(args)
+
+    def build(self):
+        """ Initialize the weights of the model
+        """
+
+    def init_state(self):
+        """ Return the initial cell state
+        """
+
+    def get_cell(self, prev_keyboard, prev_state):
+        """ a RNN encoder
+        See parent class for arguments details
+        """
+        # TODO:
+        return
 
 
 class DecoderNetwork:

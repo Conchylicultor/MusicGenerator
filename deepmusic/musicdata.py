@@ -37,6 +37,214 @@ class Batch:
         self.targets = []
 
 
+class BatchBuilder:
+    """ Class which create and manage batches
+    Batches are created from the songs
+    Define the song representation input (and output) format so the network must
+    support the format
+    The class has the choice to either entirely create the
+    batches when get list is called or to create the batches
+    as the training progress (more memory efficient)
+    """
+    # TODO: Should add a option to pre-compute a lot of batches and
+    # cache them in the hard drive
+    # TODO: For generating mode, add another function
+    # TODO: Add a function to get the length too (for tqdm when generators) ?
+    def __init__(self, args):
+        """
+        """
+        self.args = args
+
+    @staticmethod
+    def get_builder_id():
+        """ Return the unique id associated with the builder
+        Ultimately, the id will be used for saving/loading the dataset, and
+        as parameter argument.
+        Returns:
+            str: The name of the builder
+        """
+        raise NotImplementedError('Abstract class')
+
+    def get_list(self, dataset):
+        """ Compute the batches for the current epoch
+        Is called twice (for training and testing)
+        Args:
+            dataset (list[Song]): the training/testing set
+        Return:
+            list[Batch]: the batches to process
+        """
+        raise NotImplementedError('Abstract class')
+
+    def build_next(self, batch):
+        """ In case of a generator (batches non precomputed), compute the batch given
+        the batch id passed
+        Args:
+            batch: the current testing or training batch or id of batch to generate
+        Return:
+            Batch: the computed batch
+        """
+        return batch
+
+
+class BatchBuilderPianoRoll(BatchBuilder):
+    """ Old piano roll format (legacy code). Won't work as it is
+    """
+    def __init__(self, args):
+        super().__init__(args)
+
+    @staticmethod
+    def get_module_id():
+        return 'pianoroll'
+
+    def get_list(self, dataset):
+
+        # On the original version, the songs were directly converted to piano roll
+        # self._convert_song2array()
+
+        batches = []
+
+        # TODO: Create batches (randomly cut each song in some small parts (need to know the total length for that)
+        # then create the big matrix (NB_NOTE*sample_length) and turn that into batch). If process too long,
+        # could save the created batches in a new folder, data/samples or save/model.
+
+        # TODO: Create batches from multiples length (buckets). How to change the loss functions weights (longer
+        # sequences more penalized ?)
+
+        # TODO: Optimize memory management
+
+        # First part: Randomly extract subsamples of the songs
+        print('Subsampling songs ({})...'.format('train' if train_set else 'test'))
+
+        sample_subsampling_length = self.args.sample_length+1  # We add 1 because each input has to predict the next output
+
+        sub_songs = []
+        songs_set = dataset
+        for song in songs_set:
+            len_song = song.shape[-1]  # The last dimension correspond to the song duration
+            max_start = len_song - sample_subsampling_length
+            assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
+            nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length
+            for _ in range(nb_sample_song):
+                start = np.random.randint(max_start)  # TODO: Add mode to only start at the begining of a bar
+                sub_song = song[:, start:start+sample_subsampling_length]
+                sub_songs.append(sub_song)
+
+        # Second part: Shuffle the song extracts
+        print("Shuffling the dataset...")
+        np.random.shuffle(sub_songs)
+
+        # Third part: Group the samples together to create the batches
+        print("Generating batches...")
+
+        def gen_next_samples():
+            """ Generator over the mini-batch training samples
+            Warning: the last samples will be ignored if the number of batch does not match the number of samples
+            """
+            nb_samples = len(sub_songs)
+            for i in range(nb_samples//self.args.batch_size):
+                yield sub_songs[i*self.args.batch_size:(i+1)*self.args.batch_size]
+
+        for samples in gen_next_samples():  # TODO: tqdm with persist = False / will this work with generators ?
+            batch = Batch()
+
+            # samples has shape [batch_size, NB_NOTES, sample_subsampling_length]
+            assert len(samples) == self.args.batch_size
+            assert samples[0].shape == (music.NB_NOTES, sample_subsampling_length)
+
+            # Define targets and inputs
+            for i in range(self.args.sample_length):
+                input = -np.ones([len(samples), music.NB_NOTES])
+                target = np.zeros([len(samples), music.NB_NOTES])
+                for j, sample in enumerate(samples):  # len(samples) == self.args.batch_size
+                    # TODO: Could reuse boolean idx computed (from target to next input)
+                    input[j, sample[:, i] == 1] = 1.0
+                    target[j, sample[:, i+1] == 1] = 1.0
+
+                batch.inputs.append(input)
+                batch.targets.append(target)
+
+            batches.append(batch)
+
+        # Use tf.train.batch() ??
+
+        # TODO: Save some batches as midi to see if correct
+
+        return batches
+
+    def get_batches_test(self):  # TODO: Move that to BatchBuilder
+        """ Return the batches which initiate the RNN when generating
+        The initial batches are loaded from a json file containing the first notes of the song. The note values
+        are the standard midi ones. Here is an examples of an initiator file:
+
+        ```
+        {"initiator":[
+            {"name":"Simple_C4",
+             "seq":[
+                {"notes":[60]}
+            ]},
+            {"name":"some_chords",
+             "seq":[
+                {"notes":[60,64]}
+                {"notes":[66,68,71]}
+                {"notes":[60,64]}
+            ]}
+        ]}
+        ```
+
+        Return:
+            List[Batch], List[str]: The generated batches with the associated names
+        """
+        assert self.args.batch_size == 1
+
+        batches = []
+        names = []
+
+        with open(self.TEST_INIT_FILE) as init_file:
+            initiators = json.load(init_file)
+
+        for initiator in initiators['initiator']:
+            batch = Batch()
+
+            for seq in initiator['seq']:  # We add a few notes
+                new_input = -np.ones([self.args.batch_size, music.NB_NOTES])  # No notes played by default
+                for note in seq['notes']:
+                    new_input[0, note] = 1.0
+                batch.inputs.append(new_input)
+
+            names.append(initiator['name'])
+            batches.append(batch)
+
+        return batches, names
+
+
+class BatchBuilderRelative(BatchBuilder):
+    """ Prepare the batches for the current epoch.
+    Generate batches of the form:
+        12 values for relative position with previous notes (modulo 12)
+        14 values for the relative pitch (+/-7)
+        12 values for the relative positions with the previous note
+    """
+    # TODO: How to optimize !! (precompute all values, use sparse arrays ?)
+    def __init__(self, args):
+        super().__init__(args)
+
+    @staticmethod
+    def get_module_id():
+        return 'relative'
+
+    def get_list(self,  dataset):
+        """
+        Args:
+            dataset (list[Song]):
+        Returns:
+
+        """
+        pass
+
+    def build_next(self, batch):
+        pass
+
+
 class MusicData:
     """Dataset class
     """
@@ -68,6 +276,9 @@ class MusicData:
         self.songs = []
         self.songs_train = None
         self.songs_test = None
+
+        # TODO: Dynamic loading of the batch format, with the associated dataset flag (ex: data/samples/pianoroll/...)
+        self.batch_builder = BatchBuilderRelative(args)
 
         if not self.args.test:  # No need to load the dataset when testing
             self._restore_dataset()
@@ -154,13 +365,13 @@ class MusicData:
             except MidiInvalidException as e:
                 tqdm.write('File ignored ({}): {}'.format(filename, e))
             else:
-                self.songs.append(self._convert_song2array(new_song))
+                self.songs.append(new_song)
                 tqdm.write('Song loaded {}: {} tracks, {} notes, {} ticks/beat'.format(
                     filename,
                     len(new_song.tracks),
                     sum([len(t.notes) for t in new_song.tracks]),
-                    new_song.ticks_per_beat)
-                )
+                    new_song.ticks_per_beat
+                ))
 
         if not self.songs:
             raise ValueError('Empty dataset. Check that the folder exist and contains supported midi files.')
@@ -248,130 +459,29 @@ class MusicData:
         self.songs_train = self.songs[:split_nb]
         self.songs_test = self.songs[split_nb:]
 
-    def get_batches(self, train_set=True):
-        """Prepare the batches for the current epoch
-        Args:
-            train_set (Bool): Indicate on which training/testing set compute the batches
+    def get_batches(self):
+        """ Prepare the batches for the current epoch
         Return:
-            List[Batch]: Get a list of the batches for the next epoch
+            list[Batch], list[Batch]: The batches for the training and testing set (can be generators)
         """
-        batches = []
+        return (
+            self.batch_builder.get_list(self.songs_train),
+            self.batch_builder.get_list(self.songs_test),
+            #self.batch_builder.get_length()
+        )
 
-        # TODO: Create batches (randomly cut each song in some small parts (need to know the total length for that)
-        # then create the big matrix (NB_NOTE*sample_length) and turn that into batch). If process too long,
-        # could save the created batches in a new folder, data/samples or save/model.
-
-        # TODO: Create batches from multiples length (buckets). How to change the loss functions weights (longer
-        # sequences more penalized ?)
-
-        # TODO: Optimize memory management
-
-        # First part: Randomly extract subsamples of the songs
-        print('Subsampling songs ({})...'.format('train' if train_set else 'test'))
-
-        sample_subsampling_length = self.args.sample_length+1  # We add 1 because each input has to predict the next output
-
-        sub_songs = []
-        if train_set:
-            songs_set = self.songs_train
-        else:
-            songs_set = self.songs_test
-        for song in songs_set:
-            len_song = song.shape[-1]  # The last dimension correspond to the song duration
-            max_start = len_song - sample_subsampling_length
-            assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
-            nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length
-            for _ in range(nb_sample_song):
-                start = np.random.randint(max_start)  # TODO: Add mode to only start at the begining of a bar
-                sub_song = song[:, start:start+sample_subsampling_length]
-                sub_songs.append(sub_song)
-
-        # Second part: Shuffle the song extracts
-        print("Shuffling the dataset...")
-        np.random.shuffle(sub_songs)
-
-        # Third part: Group the samples together to create the batches
-        print("Generating batches...")
-
-        def gen_next_samples():
-            """ Generator over the mini-batch training samples
-            Warning: the last samples will be ignored if the number of batch does not match the number of samples
-            """
-            nb_samples = len(sub_songs)
-            for i in range(nb_samples//self.args.batch_size):
-                yield sub_songs[i*self.args.batch_size:(i+1)*self.args.batch_size]
-
-        for samples in gen_next_samples():  # TODO: tqdm with persist = False / will this work with generators ?
-            batch = Batch()
-
-            # samples has shape [batch_size, NB_NOTES, sample_subsampling_length]
-            assert len(samples) == self.args.batch_size
-            assert samples[0].shape == (music.NB_NOTES, sample_subsampling_length)
-
-            # Define targets and inputs
-            for i in range(self.args.sample_length):
-                input = -np.ones([len(samples), music.NB_NOTES])
-                target = np.zeros([len(samples), music.NB_NOTES])
-                for j, sample in enumerate(samples):  # len(samples) == self.args.batch_size
-                    # TODO: Could reuse boolean idx computed (from target to next input)
-                    input[j, sample[:, i] == 1] = 1.0
-                    target[j, sample[:, i+1] == 1] = 1.0
-
-                batch.inputs.append(input)
-                batch.targets.append(target)
-
-            batches.append(batch)
-
-        # Use tf.train.batch() ??
-
-        # TODO: Save some batches as midi to see if correct
-
-        return batches
-
-    def get_batches_test(self):
-        """ Return the batches which initiate the RNN when generating
+    def get_batches_test(self, ):  # TODO: Should only return a single batch (loading done in main class)
+        """ Return the batch which initiate the RNN when generating
         The initial batches are loaded from a json file containing the first notes of the song. The note values
         are the standard midi ones. Here is an examples of an initiator file:
-
-        ```
-        {"initiator":[
-            {"name":"Simple_C4",
-             "seq":[
-                {"notes":[60]}
-            ]},
-            {"name":"some_chords",
-             "seq":[
-                {"notes":[60,64]}
-                {"notes":[66,68,71]}
-                {"notes":[60,64]}
-            ]}
-        ]}
-        ```
-
+        Args:
+            TODO
         Return:
-            List[Batch], List[str]: The generated batches with the associated names
+            Batch: The generated batch
         """
         assert self.args.batch_size == 1
-
-        batches = []
-        names = []
-
-        with open(self.TEST_INIT_FILE) as init_file:
-            initiators = json.load(init_file)
-
-        for initiator in initiators['initiator']:
-            batch = Batch()
-
-            for seq in initiator['seq']:  # We add a few notes
-                new_input = -np.ones([self.args.batch_size, music.NB_NOTES])  # No notes played by default
-                for note in seq['notes']:
-                    new_input[0, note] = 1.0
-                batch.inputs.append(new_input)
-
-            names.append(initiator['name'])
-            batches.append(batch)
-
-        return batches, names
+        batch = None  # TODO
+        return batch
 
     @staticmethod
     def _convert_to_piano_rolls(outputs):

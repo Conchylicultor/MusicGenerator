@@ -26,8 +26,9 @@ import os  # Files management
 from typing import Dict, Tuple, List
 from tqdm import tqdm  # Progress bar
 import tensorflow as tf
-import gc
+import gc  # Manual garbage collect before each epoch
 
+from deepmusic.moduleloader import ModuleLoader
 from deepmusic.musicdata import MusicData
 from deepmusic.midiconnector import MidiConnector
 from deepmusic.imgconnector import ImgConnector
@@ -113,6 +114,7 @@ class Composer:
         dataset_args.add_argument('--create_dataset', action='store_true', help='if present, the program will only generate the dataset from the corpus (no training/testing)')
         dataset_args.add_argument('--play_dataset', type=int, nargs='?', const=10, default=None,  help='if set, the program  will randomly play some samples(can be use conjointly with create_dataset if this is the only action you want to perform)')  # TODO: Play midi ? / Or show sample images ? Both ?
         dataset_args.add_argument('--ratio_dataset', type=float, default=0.9, help='ratio of songs between training/testing')
+        ModuleLoader.batch_builders.add_argparse(dataset_args, 'input_format', 'Control the song representation for the inputs of the neural network.')
 
         # Network options (Warning: if modifying something here, also make the change on save/restore_params() )
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
@@ -129,7 +131,8 @@ class Composer:
         training_args.add_argument('--num_epochs', type=int, default=0, help='maximum number of epochs to run (0 for infinity)')
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
-        training_args.add_argument('--learning_rate', type=str, nargs='+', default=[Model.LearningRatePolicy.CST, '0.0001'], help='Learning rate (available: {})'.format(Model.LearningRatePolicy.get_policies()))
+        ModuleLoader.learning_rate_policies.add_argparse(training_args, 'learning_rate', 'Learning rate.')
+        training_args.add_argument('--learning_rate_old', type=str, nargs='+', default=[Model.LearningRatePolicy.CST, '0.0001'], help='Learning rate (available: {})'.format(Model.LearningRatePolicy.get_policies()))
         training_args.add_argument('--testing_curve', type=int, default=10, help='Also record the testing curve each every x iteration (given by the parameter)')
 
         return parser.parse_args(args)
@@ -146,6 +149,7 @@ class Composer:
 
         tf.logging.set_verbosity(tf.logging.INFO)  # DEBUG, INFO, WARN (default), ERROR, or FATAL
 
+        ModuleLoader.register_all()  # Load available modules
         self.args = self._parse_args(args)
         if not self.args.root_dir:
             self.args.root_dir = os.getcwd()  # Use the current working directory
@@ -224,8 +228,7 @@ class Composer:
                 # Explicit garbage collector call (clear the previous batches)
                 gc.collect()  # TODO: Better memory management (use generators,...)
 
-                batches_train = self.music_data.get_batches(train_set=True)
-                batches_test = self.music_data.get_batches(train_set=False)
+                batches_train, batches_test = self.music_data.get_batches()
 
                 # Also update learning parameters eventually ?? (Some is done in the model class with the policy classes)
 
