@@ -13,7 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
-"""
+""" Module manager class definition
 """
 
 from collections import OrderedDict
@@ -28,11 +28,15 @@ class ModuleManager:
     The first added module will be the one used by default.
     For now the modules can't save their state.
     """
-    def __init__(self):
+    def __init__(self, name):
         """
+        Args:
+            name (str): the name of the module manager (useful for saving/printing)
         """
+        self.name = name
         self.modules = OrderedDict()  # The order on which the modules are added is conserved
         self.module_instance = None  # Reference to the chosen module
+        self.module_name = ''  # Type of module chosen (useful when saving/loading)
         self.module_parameters = None  # Argument passed (for saving/loading)
 
     def register(self, module):
@@ -53,44 +57,64 @@ class ModuleManager:
         """
         return self.modules.keys()
 
-    def build_module(self, module_args, args):
+    def build_module(self, args):
         """ Instantiate the chosen module
         This function can be called only once when initializing the module
         Args:
-            module_args (list[str]): name of the module and its eventual additional parameters
             args (Obj): the global program parameters
         Returns:
             Obj: the created module
         """
         assert self.module_instance is not None
 
-        module_name = module_args[0]
-        additional_args = module_args[1:]
-        self.module_instance = self.modules[module_name](args, *additional_args)
-        self.module_parameters = module_args
+        module_args = getattr(args, self.name)  # Get the name of the module and its eventual additional parameters (Exception will be raised if the user try incorrect module)
+
+        self.module_name = module_args[0]
+        self.module_parameters = module_args[1:]
+        self.module_instance = self.modules[self.module_name](args, *self.module_parameters)
         return self.module_instance
 
-    def add_argparse(self, group_args, name, comment):
+    def add_argparse(self, group_args, comment):
         """ Add the module to the command line parser
         All modules have to be registered before that call
         Args:
             group_args (ArgumentParser):
-            name (str): name of the
             comment (str): help to add
         """
         keys = list(self.modules.keys())
         group_args.add_argument(
-            '--{}'.format(name),
+            '--{}'.format(self.name),
             type=str,
             nargs='+',
             default=[keys[0]],  # No defaults optional argument (implemented in the module class)
             help=comment + ' Choices available: {}'.format(', '.join(keys))
         )
 
-    def save(self):
+    def save(self, config_group):
+        """ Save the current module parameters
+        Args:
+            config_group (dict): dictionary where to write the configuration
         """
-        """
+        config_group[self.name] = ' '.join([self.module_name] + self.module_parameters)
+        # TODO: The module state should be saved here
 
-    def load(self):
+    def load(self, args, config_group):
+        """ Restore the parameters from the configuration group
+        Args:
+            args (parse_args() returned Obj): the parameters of the models (will be modified)
+            config_group (dict): the module group parameters to extract
+        Warning: Only restore the arguments. The instantiation is not done here
         """
+        setattr(args, self.name, config_group.get(self.name).split(' '))
+
+    def print(self, args):
+        """ Just print the current module configuration
+        We use the args parameters because the function is called
+        before build_module
+        Args:
+            args (parse_args() returned Obj): the parameters of the models
         """
+        print('{}: {}'.format(
+            self.name,
+            ' '.join(getattr(args, self.name))
+        ))

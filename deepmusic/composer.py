@@ -79,7 +79,7 @@ class Composer:
         self.MODEL_NAME_BASE = 'model'
         self.MODEL_EXT = '.ckpt'
         self.CONFIG_FILENAME = 'params.ini'
-        self.CONFIG_VERSION = '0.3'  # Ensure to raise a warning if there is a change in the format
+        self.CONFIG_VERSION = '0.4'  # Ensure to raise a warning if there is a change in the format
 
         self.TRAINING_VISUALIZATION_STEP = 1000  # Plot a training sample every x iterations (Warning: There is a really low probability that on a epoch, it's always the same testing bach which is visualized)
         self.TRAINING_VISUALIZATION_DIR = 'progression'
@@ -114,7 +114,7 @@ class Composer:
         dataset_args.add_argument('--create_dataset', action='store_true', help='if present, the program will only generate the dataset from the corpus (no training/testing)')
         dataset_args.add_argument('--play_dataset', type=int, nargs='?', const=10, default=None,  help='if set, the program  will randomly play some samples(can be use conjointly with create_dataset if this is the only action you want to perform)')  # TODO: Play midi ? / Or show sample images ? Both ?
         dataset_args.add_argument('--ratio_dataset', type=float, default=0.9, help='ratio of songs between training/testing')
-        ModuleLoader.batch_builders.add_argparse(dataset_args, 'input_format', 'Control the song representation for the inputs of the neural network.')
+        ModuleLoader.batch_builders.add_argparse(dataset_args, 'Control the song representation for the inputs of the neural network.')
 
         # Network options (Warning: if modifying something here, also make the change on save/restore_params() )
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
@@ -131,7 +131,7 @@ class Composer:
         training_args.add_argument('--num_epochs', type=int, default=0, help='maximum number of epochs to run (0 for infinity)')
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
         training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
-        ModuleLoader.learning_rate_policies.add_argparse(training_args, 'learning_rate', 'Learning rate.')
+        ModuleLoader.learning_rate_policies.add_argparse(training_args, 'Learning rate.')
         training_args.add_argument('--learning_rate_old', type=str, nargs='+', default=[Model.LearningRatePolicy.CST, '0.0001'], help='Learning rate (available: {})'.format(Model.LearningRatePolicy.get_policies()))
         training_args.add_argument('--testing_curve', type=int, default=10, help='Also record the testing curve each every x iteration (given by the parameter)')
 
@@ -462,6 +462,8 @@ class Composer:
             self.args.ratio_dataset = config['Training'].getfloat('ratio_dataset')
             self.args.testing_curve = config['Training'].getint('testing_curve')
 
+            ModuleLoader.load_all(self.args, config)
+
             # Show the restored params
             print('Warning: Restoring parameters from previous configuration (you should manually edit the file if you want to change one of those)')
 
@@ -498,12 +500,16 @@ class Composer:
         config['Training']['ratio_dataset'] = str(self.args.ratio_dataset)
         config['Training']['testing_curve'] = str(self.args.testing_curve)
 
+        # Save the chosen modules and their configuration
+        ModuleLoader.save_all(config)
+
         with open(os.path.join(self.model_dir, self.CONFIG_FILENAME), 'w') as config_file:
             config.write(config_file)
 
     def _print_params(self):
         """ Print the current params
         """
+        print()
         print('Current parameters:')
         print('glob_step: {}'.format(self.glob_step))
         print('keep_all: {}'.format(self.args.keep_all))
@@ -522,6 +528,9 @@ class Composer:
         print('save_every: {}'.format(self.args.save_every))
         print('ratio_dataset: {}'.format(self.args.ratio_dataset))
         print('testing_curve: {}'.format(self.args.testing_curve))
+
+        ModuleLoader.print_all(self.args)
+        print()
 
     def _get_model_name(self):
         """ Parse the argument to decide were to save/load the model
