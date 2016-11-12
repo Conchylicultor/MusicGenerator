@@ -65,7 +65,7 @@ class ModuleManager:
         Returns:
             Obj: the created module
         """
-        assert self.module_instance is not None
+        assert self.module_instance is None
 
         module_args = getattr(args, self.name)  # Get the name of the module and its eventual additional parameters (Exception will be raised if the user try incorrect module)
 
@@ -81,6 +81,8 @@ class ModuleManager:
             group_args (ArgumentParser):
             comment (str): help to add
         """
+        assert len(self.modules.keys())   # Should contain at least 1 module
+
         keys = list(self.modules.keys())
         group_args.add_argument(
             '--{}'.format(self.name),

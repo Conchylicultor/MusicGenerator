@@ -21,6 +21,7 @@ Model to generate new songs
 import numpy as np  # To generate random numbers
 import tensorflow as tf
 
+from deepmusic.moduleloader import ModuleLoader
 from deepmusic.musicdata import Batch
 from deepmusic.keyboardcell import KeyboardCell
 import deepmusic.songstruct as music
@@ -239,7 +240,7 @@ class Model:
 
             self.schedule_policy = Model.ScheduledSamplingPolicy(self.args)
             self.target_weights_policy = Model.TargetWeightsPolicy(self.args)
-            self.learning_rate_policy = Model.LearningRatePolicy(self.args)  # Load the chosen policies
+            self.learning_rate_policy = ModuleLoader.learning_rate_policies.build_module(self.args)  # Load the chosen policies
 
             # TODO: If train on different length, check that the loss is proportional to the length or average ???
             loss_fct = tf.nn.seq2seq.sequence_loss(

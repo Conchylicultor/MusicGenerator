@@ -16,6 +16,10 @@
 """
 Hierarchical data structures of a song
 """
+
+import operator  # To rescale the song
+
+
 MIDI_NOTES_RANGE = [21, 108]  # Min and max (included) midi note on a piano
 # TODO: Warn/throw when we try to add a note outside this range
 # TODO: Easy conversion from this range to tensor vector id (midi_note2tf_id)
@@ -81,6 +85,13 @@ class Track:
 class Song:
     """ Structure which encapsulate the song data
     """
+
+    # Define the time unit
+    # TODO: musicdata should have possibility to modify those parameters (through self.args)
+    # Invert of time note which define the maximum resolution for a song. Ex: 2 for 1/2 note, 4 for 1/4 of note
+    MAXIMUM_SONG_RESOLUTION = 4
+    NOTES_PER_BAR = 4  # Waltz not supported
+
     def __init__(self):
         self.ticks_per_beat = 96
         self.tempo_map = []
@@ -91,3 +102,34 @@ class Song:
         Note that the length is recomputed each time the function is called
         """
         return max([max([n.tick + n.duration for n in t.notes]) for t in self.tracks])
+
+    def _get_scale(self):
+        """ Compute the unit scale factor for the song
+        The scale factor allow to have a tempo independent time unit, to represent the song as an array
+        of dimension [key, time_unit]. Once computed, one has just to divide (//) the ticks or multiply
+        the time units to go from one representation to the other.
+
+        Return:
+            int: the scale factor for the current song
+        """
+
+        # TODO: Assert that the scale factor is not a float (the % =0)
+        return 4 * self.ticks_per_beat // (Song.MAXIMUM_SONG_RESOLUTION*Song.NOTES_PER_BAR)
+
+    def normalize(self, inverse=False):
+        """ Transform the song into a tempo independent song
+        Warning: If the resolution of the song is is more fine that the given
+        scale, some information will be definitively lost
+        Args:
+            inverse (bool): if true, we reverse the normalization
+        """
+        scale = self._get_scale()
+        op = operator.floordiv if not inverse else operator.mul
+
+        # TODO: Not sure why this plot a decimal value (x.66). Investigate...
+        # print(song_length/scale)
+
+        # Shifting all notes
+        for track in self.tracks:
+            for note in track.notes:
+                note.tick = op(note.tick, scale)  # //= or *=

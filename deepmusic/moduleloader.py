@@ -19,10 +19,10 @@ All new module should be added here
 
 from deepmusic.modulemanager import ModuleManager
 
-from deepmusic.musicdata import BatchBuilderPianoRoll
-from deepmusic.musicdata import BatchBuilderRelative
-
-from deepmusic.modules import learning_rate
+from deepmusic.modules import batchbuilder
+from deepmusic.modules import learningratepolicy
+from deepmusic.modules import encoder
+from deepmusic.modules import decoder
 
 
 class ModuleLoader:
@@ -40,18 +40,27 @@ class ModuleLoader:
         """ List all available modules for the current session
         This function should be called only once at the beginning of the
         program, before parsing the command lines arguments
-        Don't instantiate anything here (just notify the program).
+        It doesn't instantiate anything here (just notify the program).
         The module manager name will define the command line flag
         which will be used
         """
         ModuleLoader.batch_builders = ModuleManager('batch_builder')
-        ModuleLoader.batch_builders.register(BatchBuilderRelative)
-        ModuleLoader.batch_builders.register(BatchBuilderPianoRoll)
+        ModuleLoader.batch_builders.register(batchbuilder.Relative)
+        ModuleLoader.batch_builders.register(batchbuilder.PianoRoll)
 
         ModuleLoader.learning_rate_policies = ModuleManager('learning_rate')
-        ModuleLoader.learning_rate_policies.register(learning_rate.LearningRatePolicyCst)
-        ModuleLoader.learning_rate_policies.register(learning_rate.LearningRatePolicyStepsWithDecay)
-        ModuleLoader.learning_rate_policies.register(learning_rate.LearningRatePolicyAdaptive)
+        ModuleLoader.learning_rate_policies.register(learningratepolicy.Cst)
+        ModuleLoader.learning_rate_policies.register(learningratepolicy.StepsWithDecay)
+        ModuleLoader.learning_rate_policies.register(learningratepolicy.Adaptive)
+
+        ModuleLoader.enco_cells = ModuleManager('enco_cell')
+        ModuleLoader.enco_cells.register(encoder.Identity)
+        ModuleLoader.enco_cells.register(encoder.Rnn)
+        ModuleLoader.enco_cells.register(encoder.Embedding)
+
+        ModuleLoader.deco_cells = ModuleManager('deco_cell')
+        ModuleLoader.deco_cells.register(decoder.Perceptron)
+        ModuleLoader.deco_cells.register(decoder.Rnn)
 
     @staticmethod
     def save_all(config):
@@ -60,6 +69,8 @@ class ModuleLoader:
         config['Modules'] = {}
         ModuleLoader.batch_builders.save(config['Modules'])
         ModuleLoader.learning_rate_policies.save(config['Modules'])
+        ModuleLoader.enco_cells.save(config['Modules'])
+        ModuleLoader.deco_cells.save(config['Modules'])
 
     @staticmethod
     def load_all(args, config):
@@ -67,6 +78,8 @@ class ModuleLoader:
         """
         ModuleLoader.batch_builders.load(args, config['Modules'])
         ModuleLoader.learning_rate_policies.load(args, config['Modules'])
+        ModuleLoader.enco_cells.load(args, config['Modules'])
+        ModuleLoader.deco_cells.load(args, config['Modules'])
 
     @staticmethod
     def print_all(args):
@@ -74,3 +87,5 @@ class ModuleLoader:
         """
         ModuleLoader.batch_builders.print(args)
         ModuleLoader.learning_rate_policies.print(args)
+        ModuleLoader.enco_cells.print(args)
+        ModuleLoader.deco_cells.print(args)

@@ -13,8 +13,32 @@
 # limitations under the License.
 # ==============================================================================
 
+"""
+The learning rate policy control the evolution of the learning rate during
+the training
+"""
+
 
 class LearningRatePolicy:
+    """ Contains the different policies for the learning rate decay
+    """
+    def __init__(self, args):
+        """
+        Args:
+            args: parameters of the model
+        """
+
+    def get_learning_rate(self, glob_step):
+        """ Return the learning rate associated at the current training step
+        Args:
+            glob_step (int): Number of iterations since the beginning of training
+        Return:
+            float: the learning rate at the given step
+        """
+        raise NotImplementedError('Abstract class')
+
+
+class LearningRatePolicyOld:
     """ Contains the different policies for the learning rate decay
     """
     CST = 'cst'  # Fixed learning rate over all steps (default behavior)
@@ -81,15 +105,32 @@ class LearningRatePolicy:
         """
         return self.learning_rate_fct(glob_step)
 
-class LearningRatePolicyCst:
-    """
-    """
 
+class Cst(LearningRatePolicy):
+    """ Fixed learning rate over all steps (default behavior)
+    """
     @staticmethod
     def get_module_id():
         return 'cst'
 
-class LearningRatePolicyStepsWithDecay:
+    def __init__(self, args, lr=0.0001):
+        """
+        Args:
+            args: parameters of the model
+        """
+        self.lr = lr
+
+    def get_learning_rate(self, glob_step):
+        """ Return the learning rate associated at the current training step
+        Args:
+            glob_step (int): Number of iterations since the beginning of training
+        Return:
+            float: the learning rate at the given step
+        """
+        return self.lr
+
+
+class StepsWithDecay(LearningRatePolicy):
     """
     """
 
@@ -97,7 +138,8 @@ class LearningRatePolicyStepsWithDecay:
     def get_module_id():
         return 'step'
 
-class LearningRatePolicyAdaptive:
+
+class Adaptive(LearningRatePolicy):
     """ Decrease the learning rate when training error
     reach a plateau
     """
