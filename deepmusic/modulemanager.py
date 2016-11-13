@@ -37,7 +37,7 @@ class ModuleManager:
         self.modules = OrderedDict()  # The order on which the modules are added is conserved
         self.module_instance = None  # Reference to the chosen module
         self.module_name = ''  # Type of module chosen (useful when saving/loading)
-        self.module_parameters = None  # Argument passed (for saving/loading)
+        self.module_parameters = []  # Arguments passed (for saving/loading)
 
     def register(self, module):
         """ Register a new module
@@ -56,6 +56,14 @@ class ModuleManager:
             list[str]: the list of modules
         """
         return self.modules.keys()
+
+    def get_chosen_name(self):
+        """ Return the name of the chosen module
+        Name is defined by get_module_id
+        Returns:
+            str: the name of the chosen module
+        """
+        return self.module_name
 
     def build_module(self, args):
         """ Instantiate the chosen module

@@ -51,6 +51,7 @@ class MusicData:
         self.DATA_VERSION = '0.2'  # Assert compatibility between versions
         self.DATA_DIR_MIDI = 'data/midi'  # Originals midi files
         self.DATA_DIR_SAMPLES = 'data/samples'  # Training/testing samples after pre-processing
+        self.DATA_SAMPLES_RAW = 'raw'  # Unpreprocessed songs container tag
         self.DATA_SAMPLES_EXT = '.pkl'
         self.TEST_INIT_FILE = 'data/test/initiator.json'  # Initial input for the generated songs
         self.FILE_EXT = '.mid'  # Could eventually add support for other format later ?
@@ -77,35 +78,60 @@ class MusicData:
 
             # Plot some stats:
             print('Loaded: {} songs ({} train/{} test)'.format(
-                len(self.songs),
+                len(self.songs_train) + len(self.songs_test),
                 len(self.songs_train),
                 len(self.songs_test))
             )  # TODO: Print average, max, min duration
 
     def _restore_dataset(self):
         """Load/create the conversations data
+        Done in two steps:
+         * Extract the midi files as a raw song format
+         * Transform this raw song as neural networks compatible input
         """
 
-        # Construct the dataset name
-        samples_path = os.path.join(
+        # Construct the dataset names
+        samples_path_generic = os.path.join(
             self.args.root_dir,
             self.DATA_DIR_SAMPLES,
-            self.args.dataset_tag + self.DATA_SAMPLES_EXT
+            self.args.dataset_tag + '-{}' + self.DATA_SAMPLES_EXT
         )
+        samples_path_raw = samples_path_generic.format(self.DATA_SAMPLES_RAW)
+        samples_path_preprocessed = samples_path_generic.format(ModuleLoader.batch_builders.get_chosen_name())
 
-        # Restoring precomputed model
-        if os.path.exists(samples_path):
-            print('Restoring dataset from {}...'.format(samples_path))
-            self._restore_samples(samples_path)
+        # TODO: the _restore_samples from the raw songs and precomputed database should have different versions number
+
+        # Restoring precomputed database
+        if os.path.exists(samples_path_preprocessed):
+            print('Restoring dataset from {}...'.format(samples_path_preprocessed))
+            self._restore_samples(samples_path_preprocessed)
 
         # First time we load the database: creating all files
         else:
-            print('Training samples not found. Creating dataset...')
-            self._create_samples()
+            print('Training samples not found. Creating dataset from the songs...')
+            # Restoring raw songs
+            if os.path.exists(samples_path_raw):
+                print('Restoring songs from {}...'.format(samples_path_raw))
+                self._restore_samples(samples_path_raw)
+
+            # First time we load the database: creating all files
+            else:
+                print('Raw songs not found. Extracting from midi files...')
+                self._create_raw_songs()
+                print('Saving raw songs...')
+                self._save_samples(samples_path_raw)
+
+            # At this point, self.songs contain the list of the raw songs. Each
+            # song is then preprocessed by the batch builder
+
+            # Generating the data from the raw songs
+            print('Pre-processing songs...')
+            for i, song in tqdm(enumerate(self.songs)):
+                self.songs[i] = self.batch_builder.prepare_data(song)
 
             print('Saving dataset...')
             np.random.shuffle(self.songs)  # Important to do that before saving so the train/test set will be fixed each time we reload the dataset
-            self._save_samples(samples_path)
+            self._save_samples(samples_path_preprocessed)
 
     def _restore_samples(self, samples_path):
         """ Load samples from file
@@ -138,7 +164,7 @@ class MusicData:
             }
             pickle.dump(data, handle, -1)  # Using the highest protocol available
 
-    def _create_samples(self):
+    def _create_raw_songs(self):
         """ Create the database from the midi files
         """
         midi_dir = os.path.join(self.args.root_dir, self.DATA_DIR_MIDI, self.args.dataset_tag)
@@ -161,8 +187,6 @@ class MusicData:
 
         if not self.songs:
             raise ValueError('Empty dataset. Check that the folder exist and contains supported midi files.')
-
-        pass
 
     def _convert_song2array(self, song):
         """ Convert a given song to a numpy multi-dimensional array (piano roll)
@@ -232,6 +256,7 @@ class MusicData:
         split_nb = int(self.args.ratio_dataset * len(self.songs))
         self.songs_train = self.songs[:split_nb]
         self.songs_test = self.songs[split_nb:]
+        self.songs = None  # Not needed anymore (free some memory)
 
     def get_batches(self):
         """ Prepare the batches for the current epoch

@@ -18,6 +18,7 @@ The batch builder convert the songs into data readable by the neural networks.
 Used for training, testing and generating
 """
 
+import random
 import json
 
 import deepmusic.songstruct as music
@@ -55,7 +56,7 @@ class BatchBuilder:
         """ Compute the batches for the current epoch
         Is called twice (for training and testing)
         Args:
-            dataset (list[Song]): the training/testing set
+            dataset (list[Objects]): the training/testing set ()
         Return:
             list[Batch]: the batches to process
         """
@@ -70,6 +71,17 @@ class BatchBuilder:
             Batch: the computed batch
         """
         return batch
+
+    def prepare_data(self, song):
+        """ Apply some pre-processing to the songs so the song
+        already get the right input representation.
+        Do it once globally for all songs
+        Args:
+            song (Song): the training/testing set
+        Return:
+            Object: the song after formatting
+        """
+        return song  # By default no pre-processing
 
 
 class Relative(BatchBuilder):

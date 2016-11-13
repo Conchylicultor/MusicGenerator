@@ -113,7 +113,7 @@ class Composer:
         dataset_args.add_argument('--dataset_tag', type=str, default='ragtimemusic', help='tag to differentiate which data use (if the data are not present, the program will try to generate from the midi folder)')
         dataset_args.add_argument('--create_dataset', action='store_true', help='if present, the program will only generate the dataset from the corpus (no training/testing)')
         dataset_args.add_argument('--play_dataset', type=int, nargs='?', const=10, default=None,  help='if set, the program  will randomly play some samples(can be use conjointly with create_dataset if this is the only action you want to perform)')  # TODO: Play midi ? / Or show sample images ? Both ?
-        dataset_args.add_argument('--ratio_dataset', type=float, default=0.9, help='ratio of songs between training/testing')
+        dataset_args.add_argument('--ratio_dataset', type=float, default=0.9, help='ratio of songs between training/testing. The ratio is fixed at the beginning and cannot be changed')
         ModuleLoader.batch_builders.add_argparse(dataset_args, 'Control the song representation for the inputs of the neural network.')
 
         # Network options (Warning: if modifying something here, also make the change on save/restore_params() )
