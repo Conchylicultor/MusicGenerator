@@ -72,7 +72,7 @@ class BatchBuilder:
         """
         return batch
 
-    def prepare_data(self, song):
+    def process_song(self, song):
         """ Apply some pre-processing to the songs so the song
         already get the right input representation.
         Do it once globally for all songs
@@ -80,6 +80,18 @@ class BatchBuilder:
             song (Song): the training/testing set
         Return:
             Object: the song after formatting
+        """
+        return song  # By default no pre-processing
+
+    def reconstruct_song(self, song):
+        """ Reconstruct the original raw song from the preprocessed data
+        We should have:
+            reconstruct_song(process_song(my_song)) == my_song
+
+        Args:
+            song (Object): the training/testing set
+        Return:
+            Song: the song after formatting
         """
         return song  # By default no pre-processing
 
@@ -91,6 +103,45 @@ class Relative(BatchBuilder):
         14 values for the relative pitch (+/-7)
         12 values for the relative positions with the previous note
     """
+    NB_NOTES_SCALE = 12
+    OFFSET_SCALES = 0  # Start at A0
+    NB_SCALES = 7  # Up to G7 (Official order is A6, B6, C7, D7, E7,... G7)
+
+    # Experiments on the relative note representation:
+    # Experiment 1:
+    # * As baseline, we only project the note on one scale (C5: 51)
+    BASELINE_OFFSET = 51
+
+    class RelativeNote:
+        """ Struct which define a note in a relative way with respect to
+        the previous note
+        Can only play 7 octave (so the upper and lower notes of the
+        piano are never reached (not that important in practice))
+        """
+        def __init__(self):
+            # TODO: Should the network get some information about the absolute pitch ?? An other way could be to
+            # always start by a note from the base
+            # TODO: Define behavior when staturating
+            # TODO: Try with time relative to prev vs next
+            # TODO: Try to randomly permute chords vs low to high pitch
+            # TODO: Try pitch %7 vs fixed +/-7
+            # TODO: Try to add a channel number for each note (2 class SoftMax) <= Would require a clean database where the melodie/bass are clearly separated
+            self.pitch_class = 0  # A, B, C,... +/- %12
+            self.scale = 0  # Octave +/- % 7
+            self.prev_tick = 0  # Distance from previous note (from -0 up to -MAXIMUM_SONG_RESOLUTION*NOTES_PER_BAR (=1 bar))
+
+        def __add__(self, raw_note):
+            """ Add self to the raw note (absolute position), return an
+            absolute position note.
+            Args:
+                raw_note (music.Note): Current note
+            Return:
+                music.Note: The new note
+            """
+            new_note = music.Note()
+            new_note.tick = raw_note.tick + self.prev_tick
+            new_note.note = Relative.BASELINE_OFFSET + (raw_note.note + self.pitch_class) % Relative.NB_NOTES_SCALE
+            return new_note
 
     class RelativeSong:
         """ Struct which define a song in a relative way (intern class format)
@@ -101,15 +152,8 @@ class Relative(BatchBuilder):
             """ All attribute are defined with respect with the previous one
             """
             self.first_note = None  # Define the reference note
-            # TODO: Try with time relative to prev vs next
-            # TODO: Try to randomly permute chords vs low to high pitch
-            # TODO: Try pitch %7 vs fixed +/-7
-            # TODO: Try to add a channel number for each note (2 class softmax) <= Would require a clean database where the melodie/bass are clearly separated
-            self.pitch_class = []  # A, B, C,... +/- %12
-            self.pitch = []  # Octave +/- % 7
-            self.prev_tick = []  # Distance from previous note (from -0 up to -MAXIMUM_SONG_RESOLUTION*NOTES_PER_BAR (=1 bar))
+            self.notes = []
 
-    # TODO: How to optimize !! (precompute all values, use sparse arrays ?)
     def __init__(self, args):
         super().__init__(args)
 
@@ -117,58 +161,67 @@ class Relative(BatchBuilder):
     def get_module_id():
         return 'relative'
 
-    def prepare_data(self, dataset):
+    def process_song(self, old_song):
         """ Pre-process the data once globally
         Do it once globally.
         Args:
-            dataset (list[Song]):
+            old_song (Song): original song
         Returns:
-            list[Obj]: the new dataset
+            list[RelativeSong]: the new formatted song
         """
-        # TODO: If we transform songs by song instead of all in once, we could greatly
-        # optimize memory (instead of having 2x the dataset loaded in memory)
-        # Otherwise, could clear the songs here each time we process it (not very
-        # smart because we would have to do it for every builder class)
+        new_song = Relative.RelativeSong()
 
-        new_dataset = []
-        for old_song in dataset:
-            new_song = Relative.RelativeSong()
+        old_song.normalize()
 
-            old_song.normalize()
+        # Gather all notes and sort them by absolute time
+        all_notes = []
+        for track in old_song.tracks:
+            for note in track.notes:
+                all_notes.append(note)
+        all_notes.sort(key=lambda n: n.tick)
 
-            # Gather all notes and sort them
-            all_notes = []
-            for track in old_song.tracks:
-                for note in track.notes:
-                    all_notes.append(note)
-            all_notes.sort(key=lambda n: n.tick)
+        # Compute the relative position for each note
+        prev_note = all_notes[0]
+        new_song.first_note = prev_note  # TODO: What if the song start by a chord ?
+        for note in all_notes[1:]:
+            new_note = Relative.RelativeNote()
+            # TODO: Replace numbers by consts
+            new_note.pitch_class = (note.note - prev_note.note) % Relative.NB_NOTES_SCALE
+            new_note.scale = (note.note//Relative.NB_NOTES_SCALE - prev_note.note//Relative.NB_NOTES_SCALE) % Relative.NB_SCALES  # TODO: add offset for the notes ? (where does the game begins ?)
+            new_note.prev_tick = note.tick - prev_note.tick
 
-            # Compute the relative position for each note
-            prev_note = all_notes[0]
-            new_song.first_note = prev_note  # TODO: What if the song start by a chord ?
-            for note in all_notes[1:]:
-                # TODO: Replace numbers by consts
-                new_song.pitch_class.append((note.note - prev_note.note) % 12)
-                new_song.pitch.append((note.note//12 - prev_note.note//12) % 7)  # TODO: add offset for the notes ? (where does the game begins ?)
-                new_song.prev_tick.append(note.tick - prev_note.tick)
+            new_song.notes.append(new_note)
 
-                prev_note = note
+            prev_note = note
 
-            new_dataset.append(new_song)
+        return new_song
 
-        songs_set = dataset
-        for song in songs_set:
-            len_song = song.shape[-1]  # The last dimension correspond to the song duration
-            max_start = len_song - sample_subsampling_length
-            assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
-            nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length
-            for _ in range(nb_sample_song):
-                start = np.random.randint(max_start)  # TODO: Add mode to only start at the begining of a bar
-                sub_song = song[:, start:start+sample_subsampling_length]
-                sub_songs.append(sub_song)
+    def reconstruct_song(self, rel_song):
+        """ Reconstruct the original raw song from the preprocessed data
+        See parent class for details
 
-        return 'relative'
+        Some information will be lost compare to the original song:
+            * Only one track left
+            * Original tempo lost
+        Args:
+            rel_song (RelativeSong): the song to reconstruct
+        Return:
+            Song: the reconstructed song
+        """
+        raw_song = music.Song()
+        main_track = music.Track()
 
+        prev_note = rel_song.first_note
+        main_track.notes.append(rel_song.first_note)
+        for next_note in rel_song.notes:
+            prev_note = next_note + prev_note  # Warning: next_note is RelativeNote, prev_note is music.Note
+            main_track.notes.append(prev_note)
+
+        raw_song.tracks.append(main_track)
+        raw_song.normalize(inverse=True)
+        return raw_song  # By default no pre-processing
+
+    # TODO: How to optimize !! (precompute all values, use sparse arrays ?)
     def get_list(self,  dataset):
         """ See parent class for more details
         Args:
@@ -182,6 +235,20 @@ class Relative(BatchBuilder):
 
         # Group the samples together to create the batches
         print("Generating batches...")
+
+        # TODO
+        songs_set = dataset
+        for song in songs_set:
+            len_song = song.shape[-1]  # The last dimension correspond to the song duration
+            max_start = len_song - sample_subsampling_length
+            assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
+            nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length
+            for _ in range(nb_sample_song):
+                start = np.random.randint(max_start)  # TODO: Add mode to only start at the begining of a bar
+                sub_song = song[:, start:start+sample_subsampling_length]
+                sub_songs.append(sub_song)
+
+        return 'relative'
 
         pass
 

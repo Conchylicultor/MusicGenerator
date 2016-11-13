@@ -50,6 +50,7 @@ class MusicData:
         # Filename and directories constants
         self.DATA_VERSION = '0.2'  # Assert compatibility between versions
         self.DATA_DIR_MIDI = 'data/midi'  # Originals midi files
+        self.DATA_DIR_PLAY = 'data/play'  # Target folder to show the reconstructed files
         self.DATA_DIR_SAMPLES = 'data/samples'  # Training/testing samples after pre-processing
         self.DATA_SAMPLES_RAW = 'raw'  # Unpreprocessed songs container tag
         self.DATA_SAMPLES_EXT = '.pkl'
@@ -71,6 +72,10 @@ class MusicData:
             self._restore_dataset()
 
             if self.args.play_dataset:
+                # Generate songs
+                for i in range(min(10, len(self.songs))):
+                    raw_song = self.batch_builder.reconstruct_song(self.songs[i])
+                    MidiConnector.write_song(raw_song, os.path.join(self.DATA_DIR_PLAY, str(i) + self.FILE_EXT))
                 # TODO: Display some images corresponding to the loaded songs
                 raise NotImplementedError('Can\'t play a song for now')
 
@@ -126,8 +131,8 @@ class MusicData:
 
             # Generating the data from the raw songs
             print('Pre-processing songs...')
-            for i, song in tqdm(enumerate(self.songs)):
-                self.songs[i] = self.batch_builder.prepare_data(song)
+            for i, song in tqdm(enumerate(self.songs), total=len(self.songs)):
+                self.songs[i] = self.batch_builder.process_song(song)
 
             print('Saving dataset...')
             np.random.shuffle(self.songs)  # Important to do that before saving so the train/test set will be fixed each time we reload the dataset
