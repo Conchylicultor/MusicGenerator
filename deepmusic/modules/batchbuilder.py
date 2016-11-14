@@ -18,7 +18,8 @@ The batch builder convert the songs into data readable by the neural networks.
 Used for training, testing and generating
 """
 
-import random
+import random  # Shuffling
+import operator  # Multi-level sorting
 import json
 
 import deepmusic.songstruct as music
@@ -112,6 +113,10 @@ class Relative(BatchBuilder):
     # * As baseline, we only project the note on one scale (C5: 51)
     BASELINE_OFFSET = 51
 
+    # Options:
+    # * Note absolute (A,B,C,...G) vs relative ((current-prev)%12)
+    NOTE_ABSOLUTE = False
+
     class RelativeNote:
         """ Struct which define a note in a relative way with respect to
         the previous note
@@ -121,7 +126,7 @@ class Relative(BatchBuilder):
         def __init__(self):
             # TODO: Should the network get some information about the absolute pitch ?? An other way could be to
             # always start by a note from the base
-            # TODO: Define behavior when staturating
+            # TODO: Define behavior when saturating
             # TODO: Try with time relative to prev vs next
             # TODO: Try to randomly permute chords vs low to high pitch
             # TODO: Try pitch %7 vs fixed +/-7
@@ -140,7 +145,11 @@ class Relative(BatchBuilder):
             """
             new_note = music.Note()
             new_note.tick = raw_note.tick + self.prev_tick
-            new_note.note = Relative.BASELINE_OFFSET + (raw_note.note + self.pitch_class) % Relative.NB_NOTES_SCALE
+            if Relative.NOTE_ABSOLUTE:
+                new_note.note = Relative.BASELINE_OFFSET + self.pitch_class
+            else:
+                new_note.note = Relative.BASELINE_OFFSET + ((raw_note.note-Relative.BASELINE_OFFSET) + self.pitch_class) % Relative.NB_NOTES_SCALE
+                #print(new_note.note, raw_note.note, self.pitch_class)
             return new_note
 
     class RelativeSong:
@@ -178,15 +187,18 @@ class Relative(BatchBuilder):
         for track in old_song.tracks:
             for note in track.notes:
                 all_notes.append(note)
-        all_notes.sort(key=lambda n: n.tick)
+        all_notes.sort(key=operator.attrgetter('tick', 'note'))  # Sort first by tick, then by pitch
 
         # Compute the relative position for each note
         prev_note = all_notes[0]
         new_song.first_note = prev_note  # TODO: What if the song start by a chord ?
         for note in all_notes[1:]:
             new_note = Relative.RelativeNote()
-            # TODO: Replace numbers by consts
-            new_note.pitch_class = (note.note - prev_note.note) % Relative.NB_NOTES_SCALE
+            if Relative.NOTE_ABSOLUTE:
+                new_note.pitch_class = note.note % Relative.NB_NOTES_SCALE
+            else:
+                new_note.pitch_class = (note.note - prev_note.note) % Relative.NB_NOTES_SCALE
+                #print(new_note.pitch_class, note.note, prev_note.note)
             new_note.scale = (note.note//Relative.NB_NOTES_SCALE - prev_note.note//Relative.NB_NOTES_SCALE) % Relative.NB_SCALES  # TODO: add offset for the notes ? (where does the game begins ?)
             new_note.prev_tick = note.tick - prev_note.tick
 

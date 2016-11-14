@@ -10,7 +10,7 @@ Just an unorganised list of ideas or models to test.
 * Use 1d convolution NN on 1d grid input (Mixed with RNN): relative distance between notes is more important than absolute position. Pb: how to incorporate relation between frames (look at what has been done for video)
 * Maybe instead use a 2d convolution on 2d grid input, reformulate the musical composition as an image generation problem (with the help of adversarial model)
 * Also include the tempo change as prediction. Continuously (each time steps) or as event (Always predict 0 except sometimes) ? Prediction as a multi-class classification among some predetermined class (allegro, andante,...). Multi objective function with softmax (Loss=a*LossTempo + b*LossNotes).
-* Try Skip-Thought Vectors (predict both past/future)
+* Try Skip-Thought Vectors, bidirectional-RNN (predict both past/future)
 * Encoder/decoder network: The encoder encode the keyboard disposition at time t and the decoder predict at time t+1. All this network is a cell of the global RNN network. Pb: the notes are read sequencially (solving with bidirectional RNN ?)
 
 * Training task neural art for music: play pieces with certain pattern/style.
