@@ -233,6 +233,7 @@ class Composer:
 
                 tic = datetime.datetime.now()
                 for next_batch in tqdm(batches_train, desc='Training'):  # Iterate over the batches
+                    # TODO: Could compute the perfs (time forward pass vs time batch pre-processing)
                     # Indicate if the output should be computed or not
                     is_output_visualized = self.glob_step % self.TRAINING_VISUALIZATION_STEP == 0
 

@@ -21,8 +21,26 @@ Used for training, testing and generating
 import random  # Shuffling
 import operator  # Multi-level sorting
 import json
+import numpy as np
 
 import deepmusic.songstruct as music
+
+
+class Batch:
+    """Structure containing batches info
+    Should be in a tf placeholder compatible format
+    """
+    def __init__(self):
+        self.inputs = []
+        self.targets = []
+
+    def generate(self, target=True):
+        """ Is called just before feeding the placeholder, allows additional
+        pre-processing
+        Args:
+            target(Bool): is true if the bach also need to generate the target
+        """
+        pass
 
 
 class BatchBuilder:
@@ -53,11 +71,12 @@ class BatchBuilder:
         """
         raise NotImplementedError('Abstract class')
 
-    def get_list(self, dataset):
+    def get_list(self, dataset, name):
         """ Compute the batches for the current epoch
         Is called twice (for training and testing)
         Args:
-            dataset (list[Objects]): the training/testing set ()
+            dataset (list[Objects]): the training/testing set
+            name (str): indicate the dataset type
         Return:
             list[Batch]: the batches to process
         """
@@ -148,6 +167,47 @@ class Relative(BatchBuilder):
             self.first_note = None  # Define the reference note
             self.notes = []
 
+    class RelativeBatch(Batch):
+        """ Struct which contains temporary information necessary to reconstruct the
+        batch
+        """
+        class SongExtract:  # Define a subsong
+            def __init__(self):
+                self.song = None  # The song reference
+                self.begin = 0
+                self.end = 0
+
+        def __init__(self, extracts):
+            """
+            Args:
+                extracts(list[SongExtract]): Should be of length batch_size, or at least all from the same size
+            """
+            super().__init__()
+            self.extracts = extracts
+
+        def generate(self, target=True):
+            """
+            Args:
+                target(Bool): is true if the bach also need to generate the target
+            """
+            # TODO: Could potentially be optimized (one big numpy array initialized only one, each input is a sub-arrays)
+            # TODO: Those inputs should be cleared once the training pass has be run (Use class with generator, __next__ and __len__)
+            sequence_length = self.extracts[0].end - self.extracts[0].begin
+            shape_input = (len(self.extracts), 1 + Relative.NB_NOTES_SCALE)  # (batch_size, note_space) +1 because of the <next> token
+
+            def gen_array(i):
+                array = np.zeros(shape_input)
+                for j, extract in enumerate(self.extracts):  # Iterate over the batches
+                    # Set the one-hot vector (chose label between <next>,A,...,G)
+                    label = extract.song.notes[extract.begin + i].pitch_class
+                    array[j, 0 if not label else label + 1] = 1
+                return array
+
+            self.inputs = [gen_array(i) for i in range(sequence_length)]  # Generate each input sequence
+            if target:
+                self.targets = self.inputs[1:]
+                self.targets.append(gen_array(sequence_length))
+
     def __init__(self, args):
         super().__init__(args)
 
@@ -177,17 +237,14 @@ class Relative(BatchBuilder):
         # Compute the relative position for each note
         prev_note = all_notes[0]
         new_song.first_note = prev_note  # TODO: What if the song start by a chord ?
-        #print(new_song.first_note.note%12, 'first')
         for note in all_notes[1:]:
             # Check if we should insert an empty token
             temporal_distance = note.tick - prev_note.tick
             assert temporal_distance >= 0
-            #print(note.tick, prev_note.tick)
             if Relative.HAS_EMPTY and temporal_distance > 0:
                 for i in range(temporal_distance):
                     separator = Relative.RelativeNote()  # Separation token
                     separator.pitch_class = None
-                    #print(separator.pitch_class)
                     new_song.notes.append(separator)
 
             # Insert the new relative note
@@ -198,7 +255,6 @@ class Relative(BatchBuilder):
                 new_note.pitch_class = (note.note - prev_note.note) % Relative.NB_NOTES_SCALE
             new_note.scale = (note.note//Relative.NB_NOTES_SCALE - prev_note.note//Relative.NB_NOTES_SCALE) % Relative.NB_SCALES  # TODO: add offset for the notes ? (where does the game begins ?)
             new_note.prev_tick = temporal_distance
-            #print(new_note.pitch_class, note.note, prev_note.note)
             new_song.notes.append(new_note)
 
             prev_note = note
@@ -221,7 +277,6 @@ class Relative(BatchBuilder):
         main_track = music.Track()
 
         prev_note = rel_song.first_note
-        #print(prev_note.tick, prev_note.note, 'first')
         main_track.notes.append(rel_song.first_note)
         current_tick = rel_song.first_note.tick
         for next_note in rel_song.notes:
@@ -244,7 +299,6 @@ class Relative(BatchBuilder):
                 new_note.tick = prev_note.tick + next_note.prev_tick
             # * Scale
             # ...
-            #print(new_note.tick, new_note.note)
             main_track.notes.append(new_note)
             prev_note = new_note
 
@@ -253,35 +307,48 @@ class Relative(BatchBuilder):
         return raw_song
 
     # TODO: How to optimize !! (precompute all values, use sparse arrays ?)
-    def get_list(self,  dataset):
+    def get_list(self,  dataset, name):
         """ See parent class for more details
         Args:
             dataset (list[Song]): the training/testing set
+            name (str): indicate the dataset type
         Return:
             list[Batch]: the batches to process
         """
-        # Shuffle the song extracts
-        print("Shuffling the dataset...")
-        random.shuffle(dataset)
+        # Randomly extract subsamples of the songs
+        print('Subsampling the songs ({})...'.format(name))
 
-        # Group the samples together to create the batches
-        print("Generating batches...")
-
-        # TODO
-        songs_set = dataset
-        for song in songs_set:
-            len_song = song.shape[-1]  # The last dimension correspond to the song duration
+        extracts = []
+        sample_subsampling_length = self.args.sample_length+1  # We add 1 because each input has to predict the next output
+        for song in dataset:
+            len_song = len(song.notes)
             max_start = len_song - sample_subsampling_length
             assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
-            nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length
+            nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length (TODO: Could control the factor)
             for _ in range(nb_sample_song):
-                start = np.random.randint(max_start)  # TODO: Add mode to only start at the begining of a bar
-                sub_song = song[:, start:start+sample_subsampling_length]
-                sub_songs.append(sub_song)
+                extract = Relative.RelativeBatch.SongExtract()
+                extract.song = song
+                extract.begin = random.randrange(max_start)  # TODO: Add mode to only start at the beginning of a bar
+                extract.end = extract.begin + self.args.sample_length
+                extracts.append(extract)# Second part: Shuffle the song extracts
 
-        return 'relative'
+        # Shuffle the song extracts
+        print('Shuffling the dataset...')
+        random.shuffle(extracts)
 
-        pass
+        # Group the samples together to create the batches
+        print('Generating batches...')
+
+        def gen_next_samples():
+            """ Generator over the mini-batch training samples
+            Warning: the last samples will be ignored if the number of batch does not match the number of samples
+            """
+            nb_samples = len(extracts)
+            for i in range(nb_samples//self.args.batch_size):
+                yield extracts[i*self.args.batch_size:(i+1)*self.args.batch_size]
+
+        batch_set = [Relative.RelativeBatch(e) for e in gen_next_samples()]
+        return batch_set
 
     def build_next(self, batch):
         pass

@@ -22,7 +22,6 @@ import numpy as np  # To generate random numbers
 import tensorflow as tf
 
 from deepmusic.moduleloader import ModuleLoader
-from deepmusic.musicdata import Batch
 from deepmusic.keyboardcell import KeyboardCell
 import deepmusic.songstruct as music
 
@@ -281,9 +280,9 @@ class Model:
         """
         # TODO: Could optimize feeding between train/test/generating (compress code)
 
-        # Feed the dictionary
         feed_dict = {}
         ops = ()  # For small length, it seems (from my investigations) that tuples are faster than list for merging
+        batch.generate()
 
         # Feed placeholders and choose the ops
         if not self.args.test:  # Training

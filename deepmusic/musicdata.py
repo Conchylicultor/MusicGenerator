@@ -29,14 +29,6 @@ from deepmusic.midiconnector import MidiInvalidException
 import deepmusic.songstruct as music
 
 
-class Batch:
-    """Structure containing batches info
-    """
-    def __init__(self):
-        self.inputs = []
-        self.targets = []
-
-
 class MusicData:
     """Dataset class
     """
@@ -272,9 +264,8 @@ class MusicData:
             list[Batch], list[Batch]: The batches for the training and testing set (can be generators)
         """
         return (
-            self.batch_builder.get_list(self.songs_train),
-            self.batch_builder.get_list(self.songs_test),
-            #self.batch_builder.get_length()
+            self.batch_builder.get_list(self.songs_train, name='train'),
+            self.batch_builder.get_list(self.songs_test, name='test'),
         )
 
     def get_batches_test(self, ):  # TODO: Should only return a single batch (loading done in main class)
