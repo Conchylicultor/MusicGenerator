@@ -116,6 +116,8 @@ class Relative(BatchBuilder):
     # Options:
     # * Note absolute (A,B,C,...G) vs relative ((current-prev)%12)
     NOTE_ABSOLUTE = False
+    # * Use separation token between the notes (a note with class_pitch=-1 is a separation token)
+    HAS_EMPTY = True
 
     class RelativeNote:
         """ Struct which define a note in a relative way with respect to
@@ -134,23 +136,6 @@ class Relative(BatchBuilder):
             self.pitch_class = 0  # A, B, C,... +/- %12
             self.scale = 0  # Octave +/- % 7
             self.prev_tick = 0  # Distance from previous note (from -0 up to -MAXIMUM_SONG_RESOLUTION*NOTES_PER_BAR (=1 bar))
-
-        def __add__(self, raw_note):
-            """ Add self to the raw note (absolute position), return an
-            absolute position note.
-            Args:
-                raw_note (music.Note): Current note
-            Return:
-                music.Note: The new note
-            """
-            new_note = music.Note()
-            new_note.tick = raw_note.tick + self.prev_tick
-            if Relative.NOTE_ABSOLUTE:
-                new_note.note = Relative.BASELINE_OFFSET + self.pitch_class
-            else:
-                new_note.note = Relative.BASELINE_OFFSET + ((raw_note.note-Relative.BASELINE_OFFSET) + self.pitch_class) % Relative.NB_NOTES_SCALE
-                #print(new_note.note, raw_note.note, self.pitch_class)
-            return new_note
 
     class RelativeSong:
         """ Struct which define a song in a relative way (intern class format)
@@ -192,16 +177,28 @@ class Relative(BatchBuilder):
         # Compute the relative position for each note
         prev_note = all_notes[0]
         new_song.first_note = prev_note  # TODO: What if the song start by a chord ?
+        #print(new_song.first_note.note%12, 'first')
         for note in all_notes[1:]:
+            # Check if we should insert an empty token
+            temporal_distance = note.tick - prev_note.tick
+            assert temporal_distance >= 0
+            #print(note.tick, prev_note.tick)
+            if Relative.HAS_EMPTY and temporal_distance > 0:
+                for i in range(temporal_distance):
+                    separator = Relative.RelativeNote()  # Separation token
+                    separator.pitch_class = None
+                    #print(separator.pitch_class)
+                    new_song.notes.append(separator)
+
+            # Insert the new relative note
             new_note = Relative.RelativeNote()
             if Relative.NOTE_ABSOLUTE:
                 new_note.pitch_class = note.note % Relative.NB_NOTES_SCALE
             else:
                 new_note.pitch_class = (note.note - prev_note.note) % Relative.NB_NOTES_SCALE
-                #print(new_note.pitch_class, note.note, prev_note.note)
             new_note.scale = (note.note//Relative.NB_NOTES_SCALE - prev_note.note//Relative.NB_NOTES_SCALE) % Relative.NB_SCALES  # TODO: add offset for the notes ? (where does the game begins ?)
-            new_note.prev_tick = note.tick - prev_note.tick
-
+            new_note.prev_tick = temporal_distance
+            #print(new_note.pitch_class, note.note, prev_note.note)
             new_song.notes.append(new_note)
 
             prev_note = note
@@ -224,14 +221,36 @@ class Relative(BatchBuilder):
         main_track = music.Track()
 
         prev_note = rel_song.first_note
+        #print(prev_note.tick, prev_note.note, 'first')
         main_track.notes.append(rel_song.first_note)
+        current_tick = rel_song.first_note.tick
         for next_note in rel_song.notes:
-            prev_note = next_note + prev_note  # Warning: next_note is RelativeNote, prev_note is music.Note
-            main_track.notes.append(prev_note)
+            # Case of separator
+            if next_note.pitch_class is None:
+                current_tick += 1
+                continue
+
+            # Adding the new note
+            new_note = music.Note()
+            # * Note
+            if Relative.NOTE_ABSOLUTE:
+                new_note.note = Relative.BASELINE_OFFSET + next_note.pitch_class
+            else:
+                new_note.note = Relative.BASELINE_OFFSET + ((prev_note.note-Relative.BASELINE_OFFSET) + next_note.pitch_class) % Relative.NB_NOTES_SCALE
+            # * Tick
+            if Relative.HAS_EMPTY:
+                new_note.tick = current_tick
+            else:
+                new_note.tick = prev_note.tick + next_note.prev_tick
+            # * Scale
+            # ...
+            #print(new_note.tick, new_note.note)
+            main_track.notes.append(new_note)
+            prev_note = new_note
 
         raw_song.tracks.append(main_track)
         raw_song.normalize(inverse=True)
-        return raw_song  # By default no pre-processing
+        return raw_song
 
     # TODO: How to optimize !! (precompute all values, use sparse arrays ?)
     def get_list(self,  dataset):

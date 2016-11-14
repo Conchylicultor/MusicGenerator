@@ -68,32 +68,15 @@ class MusicData:
         # TODO: Dynamic loading of the the associated dataset flag (ex: data/samples/pianoroll/...)
         self.batch_builder = ModuleLoader.batch_builders.build_module(args)
 
-        # TODO: TO REMOVE (just an experiment)
-        # raw_song = music.Song()
-        # main_track = music.Track()
-        # for i in range(50):
-        #     new_note = music.Note()
-        #     new_note.note = 13*i+3
-        #     new_note.tick = 2*i
-        #     main_track.notes.append(new_note)
-        #     new_note = music.Note()
-        #     new_note.note = 13*i
-        #     new_note.tick = 2*i
-        #     main_track.notes.append(new_note)
-        # raw_song.tracks.append(main_track)
-        # raw_song.normalize(inverse=True)
-        # rec_song = self.batch_builder.reconstruct_song(self.batch_builder.process_song(raw_song))
-        # MidiConnector.write_song(rec_song, os.path.join(self.DATA_DIR_PLAY, "exp" + self.FILE_EXT))
-        # raise NotImplementedError('End of experiment')
-
         if not self.args.test:  # No need to load the dataset when testing
             self._restore_dataset()
 
             if self.args.play_dataset:
+                print('Play some songs from the formatted data')
                 # Generate songs
                 for i in range(min(10, len(self.songs))):
                     raw_song = self.batch_builder.reconstruct_song(self.songs[i])
-                    MidiConnector.write_song(raw_song, os.path.join(self.DATA_DIR_PLAY, str(i) + self.FILE_EXT))
+                    MidiConnector.write_song(raw_song, os.path.join(self.DATA_DIR_PLAY, str(i)))
                 # TODO: Display some images corresponding to the loaded songs
                 raise NotImplementedError('Can\'t play a song for now')
 
