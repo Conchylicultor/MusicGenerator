@@ -167,7 +167,7 @@ class Model:
             self.inputs = [
                 tf.placeholder(
                     tf.float32,  # -1.0/1.0 ? Probably better for the sigmoid
-                    [self.args.batch_size, music.NB_NOTES],
+                    [self.args.batch_size, music.NB_NOTES],  # TODO: Get input size from batch_builder
                     name='input')
                 for _ in range(self.args.sample_length)
                 ]
@@ -217,7 +217,7 @@ class Model:
             # On training, we force the correct input, on testing, we use the previous output as next input
             return tf.cond(self.use_prev[i], lambda: next_input, lambda: self.inputs[i])
 
-        # TODO: Try attention decoder
+        # TODO: Try attention decoder/use dynamic_rnn instead
         self.outputs, self.final_state = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=self.inputs,
             initial_state=None,  # The initial state is defined inside KeyboardCell

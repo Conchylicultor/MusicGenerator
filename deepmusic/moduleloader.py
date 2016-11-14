@@ -59,6 +59,7 @@ class ModuleLoader:
         ModuleLoader.enco_cells.register(encoder.Embedding)
 
         ModuleLoader.deco_cells = ModuleManager('deco_cell')
+        ModuleLoader.deco_cells.register(decoder.Lstm)
         ModuleLoader.deco_cells.register(decoder.Perceptron)
         ModuleLoader.deco_cells.register(decoder.Rnn)
 

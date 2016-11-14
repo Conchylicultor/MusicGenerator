@@ -39,11 +39,11 @@ class KeyboardCell(tf.nn.rnn_cell.RNNCell):
 
     @property
     def state_size(self):
-        raise NotImplementedError("Abstract method")
+        raise NotImplementedError('Abstract method')
 
     @property
     def output_size(self):
-        raise NotImplementedError("Abstract method")
+        raise NotImplementedError('Abstract method')
 
     def __call__(self, prev_keyboard, prev_state, scope=None):
         """ Run the cell at step t
@@ -69,8 +69,9 @@ class KeyboardCell(tf.nn.rnn_cell.RNNCell):
 
         # Encoder/decoder network
         with tf.variable_scope(scope or type(self).__name__):
-            with tf.variable_scope("Encoder"):
+            with tf.variable_scope('Encoder'):
+                # TODO: Should be enco_output, enco_state
                 next_state_enco = self.encoder.get_cell(prev_keyboard, prev_state)
-            with tf.variable_scope("Decoder"):  # Reset gate and update gate.
-                next_keyboard, next_state_deco = self.decoder.get_cell(prev_keyboard, next_state_enco)
+            with tf.variable_scope('Decoder'):  # Reset gate and update gate.
+                next_keyboard, next_state_deco = self.decoder.get_cell(prev_keyboard, (next_state_enco, prev_state[1]))
         return next_keyboard, (next_state_enco, next_state_deco)

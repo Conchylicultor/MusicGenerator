@@ -134,11 +134,11 @@ class Perceptron(DecoderNetwork):
         """
         # For projecting on the keyboard space
         self.project_hidden = tfutils.single_layer_perceptron([music.NB_NOTES, self.args.hidden_size],
-                                                      'project_hidden')
+                                                              'project_hidden')
 
         # For projecting on the keyboard space
         self.project_keyboard = tfutils.single_layer_perceptron([self.args.hidden_size, music.NB_NOTES],
-                                                        'project_keyboard')  # Should we do the activation sigmoid here ?
+                                                                'project_keyboard')  # Should we do the activation sigmoid here ?
 
     def get_cell(self, prev_keyboard, prev_state_enco):
         """ Simple 1 hidden layer perceptron
@@ -152,3 +152,44 @@ class Perceptron(DecoderNetwork):
         next_keyboard = self.project_keyboard(hidden_state)  # Should we do the activation sigmoid here ? Maybe not because the loss function does it
 
         return next_keyboard, next_state_deco
+
+
+class Lstm(DecoderNetwork):
+    """ Multi-layer Lstm. Just a wrapper around the official tf
+    """
+    @staticmethod
+    def get_module_id():
+        return 'lstm'
+
+    def __init__(self, args, *module_args):
+        """
+        Args:
+            args: parameters of the model
+        """
+        super().__init__(args)
+
+        self.rnn_cell = None
+
+    def build(self):
+        """ Initialize the weights of the model
+        """
+        # TODO: Control over the the Cell using module arguments instead of global arguments (hidden_size and num_layer) !!
+        # RNN network
+        rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
+        #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!, possible to use placeholder ?)
+        rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
+
+        self.rnn_cell = rnn_cell
+
+    def init_state(self):
+        """ Return the initial cell state
+        """
+        return self.rnn_cell.zero_state(batch_size=self.args.batch_size, dtype=tf.float32)
+
+    def get_cell(self, prev_input, prev_states):
+        """
+        """
+        print('State called', prev_input, prev_states[1])
+        next_output, next_state = self.rnn_cell(prev_input, prev_states[1])
+
+        return next_output, next_state
