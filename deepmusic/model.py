@@ -175,8 +175,8 @@ class Model:
         with tf.name_scope('placeholder_targets'):
             self.targets = [
                 tf.placeholder(
-                    tf.float32,  # 0/1
-                    [self.args.batch_size, input_dim],
+                    tf.int32,  # 0/1  # TODO: Int for sofmax, Float for sigmoid
+                    [self.args.batch_size,],  # TODO: For softmax, only 1d, for sigmoid, 2d (batch_size, num_class)
                     name='target')
                 for _ in range(self.args.sample_length)
                 ]
@@ -235,7 +235,7 @@ class Model:
                 self.outputs,
                 self.targets,
                 [tf.constant(self.target_weights_policy.get_weight(i), shape=self.targets[0].get_shape()) for i in range(len(self.targets))],  # Weights
-                softmax_loss_function=tf.nn.sigmoid_cross_entropy_with_logits,
+                #softmax_loss_function=tf.nn.softmax_cross_entropy_with_logits,  # Previous: tf.nn.sigmoid_cross_entropy_with_logits TODO: Use option to choose. (new module ?)
                 average_across_timesteps=False,  # I think it's best for variables length sequences (specially with the target weights=0), isn't it (it implies also that short sequences are less penalized than long ones) ? (TODO: For variables length sequences, be careful about the target weights)
                 average_across_batch=False  # Penalize by sample (should allows dynamic batch size) Warning: need to tune the learning rate
             )

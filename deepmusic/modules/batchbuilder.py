@@ -204,7 +204,7 @@ class Relative(BatchBuilder):
             sequence_length = self.extracts[0].end - self.extracts[0].begin
             shape_input = (len(self.extracts), Relative.RelativeBatch.get_input_dim())  # (batch_size, note_space) +1 because of the <next> token
 
-            def gen_array(i):
+            def gen_input(i):
                 array = np.zeros(shape_input)
                 for j, extract in enumerate(self.extracts):  # Iterate over the batches
                     # Set the one-hot vector (chose label between <next>,A,...,G)
@@ -212,10 +212,17 @@ class Relative(BatchBuilder):
                     array[j, 0 if not label else label + 1] = 1
                 return array
 
-            self.inputs = [gen_array(i) for i in range(sequence_length)]  # Generate each input sequence
+            def gen_target(i):  # TODO: Could merge with the previous function to optimize the calls
+                array = np.zeros([len(self.extracts)], dtype=int)  # Int for SoftMax compatibility
+                for j, extract in enumerate(self.extracts):  # Iterate over the batches
+                    # Set the one-hot label (chose label between <next>,A,...,G)
+                    label = extract.song.notes[extract.begin + i + 1].pitch_class  # Warning: +1 because targets are shifted with respect to the inputs
+                    array[j] = 0 if not label else label + 1
+                return array
+
+            self.inputs = [gen_input(i) for i in range(sequence_length)]  # Generate each input sequence
             if target:
-                self.targets = self.inputs[1:]
-                self.targets.append(gen_array(sequence_length))
+                self.targets = [gen_target(i) for i in range(sequence_length)]
 
         @staticmethod
         def get_input_dim():
