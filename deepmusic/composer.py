@@ -23,7 +23,6 @@ import argparse  # Command line parsing
 import configparser  # Saving the models parameters
 import datetime  # Chronometer
 import os  # Files management
-from typing import Dict, Tuple, List
 from tqdm import tqdm  # Progress bar
 import tensorflow as tf
 import gc  # Manual garbage collect before each epoch
@@ -48,7 +47,7 @@ class Composer:
         INTERACTIVE = 'interactive'  # The user start a melodie and the neural network complete (Not implemented)
 
         @staticmethod
-        def get_test_modes() -> List[str]:
+        def get_test_modes():
             """ Return the list of the different testing modes
             Useful on when parsing the command lines arguments
             """
@@ -125,6 +124,7 @@ class Composer:
         nn_args.add_argument('--scheduled_sampling', type=str, nargs='+', default=[Model.ScheduledSamplingPolicy.NONE], help='Define the schedule sampling policy. If set, have to indicates the parameters of the chosen policy')
         nn_args.add_argument('--target_weights', nargs='?', choices=Model.TargetWeightsPolicy.get_policies(), default=Model.TargetWeightsPolicy.LINEAR,
                              help='policy to choose the loss contribution of each step')
+        ModuleLoader.loop_processings.add_argparse(nn_args, 'Transformation to apply on each ouput.')
 
         # Training options (Warning: if modifying something here, also make the change on save/restore_params() )
         training_args = parser.add_argument_group('Training options')
@@ -261,7 +261,7 @@ class Composer:
                         self.writer_test.add_summary(outputs_test[0], self.glob_step)
 
                     # Some visualisation (we compute some training/testing samples and compare them to the ground truth)
-                    if is_output_visualized:
+                    if False and is_output_visualized:  # TODO: Restore output visualisation
                         visualization_base_name = os.path.join(self.model_dir, self.TRAINING_VISUALIZATION_DIR, str(self.glob_step))
                         tqdm.write('Visualizing: ' + visualization_base_name)
                         self._visualize_output(

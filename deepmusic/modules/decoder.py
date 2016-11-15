@@ -169,6 +169,7 @@ class Lstm(DecoderNetwork):
         super().__init__(args)
 
         self.rnn_cell = None
+        self.project_keyboard = None  # Fct which project the decoder output into the ouput space
 
     def build(self):
         """ Initialize the weights of the model
@@ -181,6 +182,10 @@ class Lstm(DecoderNetwork):
 
         self.rnn_cell = rnn_cell
 
+        # For projecting on the keyboard space
+        self.project_output = tfutils.single_layer_perceptron([self.args.hidden_size, 12 + 1],  # TODO: HACK: Input/output space hardcoded !!!
+                                                               'project_output')  # Should we do the activation sigmoid here ?
+
     def init_state(self):
         """ Return the initial cell state
         """
@@ -189,7 +194,8 @@ class Lstm(DecoderNetwork):
     def get_cell(self, prev_input, prev_states):
         """
         """
-        print('State called', prev_input, prev_states[1])
         next_output, next_state = self.rnn_cell(prev_input, prev_states[1])
+        next_output = self.project_output(next_output)
+        # No activation function here: SoftMax is computed by the loss function
 
         return next_output, next_state

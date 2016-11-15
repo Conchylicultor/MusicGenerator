@@ -161,13 +161,14 @@ class Model:
     def _build_network(self):
         """ Create the computational graph
         """
+        input_dim = ModuleLoader.batch_builders.get_module().get_input_dim()
 
         # Placeholders (Use tf.SparseTensor with training=False instead) (TODO: Try restoring dynamic batch_size)
         with tf.name_scope('placeholder_inputs'):
             self.inputs = [
                 tf.placeholder(
                     tf.float32,  # -1.0/1.0 ? Probably better for the sigmoid
-                    [self.args.batch_size, music.NB_NOTES],  # TODO: Get input size from batch_builder
+                    [self.args.batch_size, input_dim],  # TODO: Get input size from batch_builder
                     name='input')
                 for _ in range(self.args.sample_length)
                 ]
@@ -175,7 +176,7 @@ class Model:
             self.targets = [
                 tf.placeholder(
                     tf.float32,  # 0/1
-                    [self.args.batch_size, music.NB_NOTES],
+                    [self.args.batch_size, input_dim],
                     name='target')
                 for _ in range(self.args.sample_length)
                 ]
@@ -189,7 +190,7 @@ class Model:
                 ]
 
         # Define the network
-
+        loop_processing = ModuleLoader.loop_processings.build_module(self.args)
         def loop_rnn(prev, i):
             """ Loop function used to connect one output of the rnn to the next input.
             The previous input and returned value have to be from the same shape.
@@ -200,19 +201,7 @@ class Model:
             Return:
                 tf.Tensor: the input at the step i
             """
-            def activate_and_scale(X):
-                """ Predict the output from prev and scale the result on [-1, 1]
-                Use sigmoid activation
-                Args:
-                    X (tf.Tensor): the input
-                Return:
-                    tf.Ops: the activate_and_scale operator
-                """
-                # TODO: Use tanh instead ? tanh=2*sigm(2*x)-1
-                with tf.name_scope('activate_and_scale'):
-                    return tf.sub(tf.mul(2.0, tf.nn.sigmoid(X)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
-
-            next_input = activate_and_scale(prev)
+            next_input = loop_processing(prev)
 
             # On training, we force the correct input, on testing, we use the previous output as next input
             return tf.cond(self.use_prev[i], lambda: next_input, lambda: self.inputs[i])

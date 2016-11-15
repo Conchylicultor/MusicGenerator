@@ -65,6 +65,14 @@ class ModuleManager:
         """
         return self.module_name
 
+    def get_module(self):
+        """ Return the chosen module
+        Returns:
+            Obj: the reference on the module instance
+        """
+        assert self.module_instance is not None
+        return self.module_instance
+
     def build_module(self, args):
         """ Instantiate the chosen module
         This function can be called only once when initializing the module

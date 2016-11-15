@@ -23,6 +23,7 @@ from deepmusic.modules import batchbuilder
 from deepmusic.modules import learningratepolicy
 from deepmusic.modules import encoder
 from deepmusic.modules import decoder
+from deepmusic.modules import loopprocessing
 
 
 class ModuleLoader:
@@ -34,6 +35,7 @@ class ModuleLoader:
     deco_cells = None
     batch_builders = None
     learning_rate_policies = None
+    loop_processings = None
 
     @staticmethod
     def register_all():
@@ -63,6 +65,10 @@ class ModuleLoader:
         ModuleLoader.deco_cells.register(decoder.Perceptron)
         ModuleLoader.deco_cells.register(decoder.Rnn)
 
+        ModuleLoader.loop_processings = ModuleManager('loop_processing')
+        ModuleLoader.loop_processings.register(loopprocessing.SampleSoftmax)
+        ModuleLoader.loop_processings.register(loopprocessing.ActivateScale)
+
     @staticmethod
     def save_all(config):
         """ Save the modules configurations
@@ -72,6 +78,7 @@ class ModuleLoader:
         ModuleLoader.learning_rate_policies.save(config['Modules'])
         ModuleLoader.enco_cells.save(config['Modules'])
         ModuleLoader.deco_cells.save(config['Modules'])
+        ModuleLoader.loop_processings.save(config['Modules'])
 
     @staticmethod
     def load_all(args, config):
@@ -81,6 +88,7 @@ class ModuleLoader:
         ModuleLoader.learning_rate_policies.load(args, config['Modules'])
         ModuleLoader.enco_cells.load(args, config['Modules'])
         ModuleLoader.deco_cells.load(args, config['Modules'])
+        ModuleLoader.loop_processings.load(args, config['Modules'])
 
     @staticmethod
     def print_all(args):
@@ -90,3 +98,4 @@ class ModuleLoader:
         ModuleLoader.learning_rate_policies.print(args)
         ModuleLoader.enco_cells.print(args)
         ModuleLoader.deco_cells.print(args)
+        ModuleLoader.loop_processings.print(args)

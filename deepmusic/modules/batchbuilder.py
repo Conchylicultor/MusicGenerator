@@ -90,6 +90,8 @@ class BatchBuilder:
         Return:
             Batch: the computed batch
         """
+        # TODO: Unused function. Instead Batch.generate does the same thing. Is it
+        # a good idea ? Probably not. Instead should prefer this factory function
         return batch
 
     def process_song(self, song):
@@ -114,6 +116,13 @@ class BatchBuilder:
             Song: the song after formatting
         """
         return song  # By default no pre-processing
+
+    def get_input_dim():
+        """ Return the input dimension
+        Return:
+            int:
+        """
+        raise NotImplementedError('Abstract class')
 
 
 class Relative(BatchBuilder):
@@ -193,7 +202,7 @@ class Relative(BatchBuilder):
             # TODO: Could potentially be optimized (one big numpy array initialized only one, each input is a sub-arrays)
             # TODO: Those inputs should be cleared once the training pass has be run (Use class with generator, __next__ and __len__)
             sequence_length = self.extracts[0].end - self.extracts[0].begin
-            shape_input = (len(self.extracts), 1 + Relative.NB_NOTES_SCALE)  # (batch_size, note_space) +1 because of the <next> token
+            shape_input = (len(self.extracts), Relative.RelativeBatch.get_input_dim())  # (batch_size, note_space) +1 because of the <next> token
 
             def gen_array(i):
                 array = np.zeros(shape_input)
@@ -207,6 +216,14 @@ class Relative(BatchBuilder):
             if target:
                 self.targets = self.inputs[1:]
                 self.targets.append(gen_array(sequence_length))
+
+        @staticmethod
+        def get_input_dim():
+            """
+            """
+            # TODO: Refactoring. Where to place this functions ?? Should be accessible from model, and batch and depend of
+            # batch_builder, also used in enco/deco modules. Ideally should not be static
+            return 1 + Relative.NB_NOTES_SCALE  # +1 because of the <next> token
 
     def __init__(self, args):
         super().__init__(args)
@@ -350,8 +367,13 @@ class Relative(BatchBuilder):
         batch_set = [Relative.RelativeBatch(e) for e in gen_next_samples()]
         return batch_set
 
-    def build_next(self, batch):
-        pass
+    def get_input_dim(self):
+        """ In the case of the relative song, the input dim is the number of
+        note on the scale (12) + 1 for the next token
+        Return:
+            int:
+        """
+        return Relative.RelativeBatch.get_input_dim()
 
 
 class PianoRoll(BatchBuilder):
