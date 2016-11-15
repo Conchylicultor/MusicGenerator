@@ -20,7 +20,6 @@ Used for training, testing and generating
 
 import random  # Shuffling
 import operator  # Multi-level sorting
-import json
 import numpy as np
 
 import deepmusic.songstruct as music
@@ -94,6 +93,23 @@ class BatchBuilder:
         # a good idea ? Probably not. Instead should prefer this factory function
         return batch
 
+    def build_placeholder_input(self):
+        """ Create a placeholder compatible with the batch input
+        Allow to control the dimensions
+        Return:
+            tf.placeholder: the placeholder for a single timestep
+        """
+        raise NotImplementedError('Abstract class')
+
+    def build_placeholder_target(self):
+        """ Create a placeholder compatible with the target
+        Allow to control the dimensions
+        Return:
+            tf.placeholder: the placeholder for a single timestep
+        """
+        # TODO: The target also depend of the loss function (sigmoid, softmax,...) How to redefined that ?
+        raise NotImplementedError('Abstract class')
+
     def process_song(self, song):
         """ Apply some pre-processing to the songs so the song
         already get the right input representation.
@@ -116,6 +132,16 @@ class BatchBuilder:
             Song: the song after formatting
         """
         return song  # By default no pre-processing
+
+    def process_batch(self, raw_song):
+        """ Create the batch associated with the song
+        Called when generating songs to create the initial input batch
+        Args:
+            raw_song (Song): The song to convert
+        Return:
+            RelativeBatch
+        """
+        raise NotImplementedError('Abstract class')
 
     def get_input_dim():
         """ Return the input dimension
@@ -330,6 +356,25 @@ class Relative(BatchBuilder):
         raw_song.normalize(inverse=True)
         return raw_song
 
+    def process_batch(self, raw_song):
+        """ Create the batch associated with the song
+        Args:
+            raw_song (Song): The song to convert
+        Return:
+            RelativeBatch
+        """
+        processed_song = self.process_song(raw_song)
+        return self.create_extract(processed_song, 0, len(processed_song.notes))
+
+    def create_extract(self, processed_song, start, length):
+        """ preprocessed song > batch
+        """
+        extract = Relative.RelativeBatch.SongExtract()
+        extract.song = processed_song
+        extract.begin = start
+        extract.end = extract.begin + length
+        return extract
+
     # TODO: How to optimize !! (precompute all values, use sparse arrays ?)
     def get_list(self,  dataset, name):
         """ See parent class for more details
@@ -350,11 +395,11 @@ class Relative(BatchBuilder):
             assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
             nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length (TODO: Could control the factor)
             for _ in range(nb_sample_song):
-                extract = Relative.RelativeBatch.SongExtract()
-                extract.song = song
-                extract.begin = random.randrange(max_start)  # TODO: Add mode to only start at the beginning of a bar
-                extract.end = extract.begin + self.args.sample_length
-                extracts.append(extract)# Second part: Shuffle the song extracts
+                extracts.append(self.create_extract(
+                    song,
+                    random.randrange(max_start),  # Begin TODO: Add mode to only start at the beginning of a bar
+                    self.args.sample_length # End
+                ))
 
         # Shuffle the song extracts
         print('Shuffling the dataset...')

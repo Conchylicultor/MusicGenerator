@@ -21,7 +21,7 @@ from tqdm import tqdm  # Progress bar when creating dataset
 import pickle  # Saving the data
 import os  # Checking file existence
 import numpy as np  # Batch data
-# TODO: import cv2  # Plot the piano roll
+import json  # Load initiators (inputs for generating new songs)
 
 from deepmusic.moduleloader import ModuleLoader
 from deepmusic.midiconnector import MidiConnector
@@ -268,18 +268,70 @@ class MusicData:
             self.batch_builder.get_list(self.songs_test, name='test'),
         )
 
-    def get_batches_test(self, ):  # TODO: Should only return a single batch (loading done in main class)
-        """ Return the batch which initiate the RNN when generating
+    # def get_batches_test(self, ):  # TODO: Should only return a single batch (loading done in main class)
+    #     """ Return the batch which initiate the RNN when generating
+    #     The initial batches are loaded from a json file containing the first notes of the song. The note values
+    #     are the standard midi ones. Here is an examples of an initiator file:
+    #     Args:
+    #         TODO
+    #     Return:
+    #         Batch: The generated batch
+    #     """
+    #     assert self.args.batch_size == 1
+    #     batch = None  # TODO
+    #     return batch
+
+    def get_batches_test_old(self):  # TODO: This is the old version. Ideally should use the version above
+        """ Return the batches which initiate the RNN when generating
         The initial batches are loaded from a json file containing the first notes of the song. The note values
         are the standard midi ones. Here is an examples of an initiator file:
-        Args:
-            TODO
+        ```
+        {"initiator":[
+            {"name":"Simple_C4",
+             "seq":[
+                {"notes":[60]}
+            ]},
+            {"name":"some_chords",
+             "seq":[
+                {"notes":[60,64]}
+                {"notes":[66,68,71]}
+                {"notes":[60,64]}
+            ]}
+        ]}
+        ```
         Return:
-            Batch: The generated batch
+            List[Batch], List[str]: The generated batches with the associated names
         """
         assert self.args.batch_size == 1
-        batch = None  # TODO
-        return batch
+
+        batches = []
+        names = []
+
+        with open(self.TEST_INIT_FILE) as init_file:
+            initiators = json.load(init_file)
+
+        for initiator in initiators['initiator']:
+            raw_song = music.Song()
+            main_track = music.Track()
+
+            current_tick = 0
+            for seq in initiator['seq']:  # We add a few notes
+                for note_pitch in seq['notes']:
+                    new_note = music.Note()
+                    new_note.note = note_pitch
+                    new_note.tick = current_tick
+                    main_track.notes.append(new_note)
+                current_tick += 1
+
+            raw_song.tracks.append(main_track)
+            raw_song.normalize(inverse=True)
+
+            batch = self.batch_builder.process_batch(raw_song)
+
+            names.append(initiator['name'])
+            batches.append(batch)
+
+        return batches, names
 
     @staticmethod
     def _convert_to_piano_rolls(outputs):

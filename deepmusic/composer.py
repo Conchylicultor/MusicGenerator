@@ -130,7 +130,7 @@ class Composer:
         training_args = parser.add_argument_group('Training options')
         training_args.add_argument('--num_epochs', type=int, default=0, help='maximum number of epochs to run (0 for infinity)')
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
-        training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
+        training_args.add_argument('--batch_size', type=int, default=64, help='mini-batch size')
         ModuleLoader.learning_rate_policies.add_argparse(training_args, 'Learning rate initial value and decay policy.')
         training_args.add_argument('--testing_curve', type=int, default=10, help='Also record the testing curve each every x iteration (given by the parameter)')
 
@@ -297,7 +297,7 @@ class Composer:
             print('Warning: No model found in \'{}\'. Please train a model before trying to predict'.format(self.model_dir))
             return
 
-        batches, names = self.music_data.get_batches_test()
+        batches, names = self.music_data.get_batches_test_old()
         samples = list(zip(batches, names))
 
         # Predicting for each model present in modelDir
