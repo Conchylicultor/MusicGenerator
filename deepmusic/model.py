@@ -223,8 +223,11 @@ class Model:
             # note but not in the right pitch (ex: C4 instead of C5), with a decay the further the prediction
             # is (D5 and D1 more penalized than D4 and D3 if the target is D2)
 
-            # For now, by using sigmoid_cross_entropy_with_logits, the task is formulated as a NB_NOTES binary
+            # For the piano roll mode, by using sigmoid_cross_entropy_with_logits, the task is formulated as a NB_NOTES binary
             # classification problems
+
+            # For the relative note experiment, it use a standard SoftMax where the label is the relative position to the previous
+            # note
 
             self.schedule_policy = Model.ScheduledSamplingPolicy(self.args)
             self.target_weights_policy = Model.TargetWeightsPolicy(self.args)
