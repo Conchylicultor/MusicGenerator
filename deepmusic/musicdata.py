@@ -371,16 +371,15 @@ class MusicData:
         if not os.path.exists(base_dir):
             os.makedirs(base_dir)
 
-        piano_rolls = MusicData._convert_to_piano_rolls(outputs)
-
-        for i, array in enumerate(piano_rolls):  # Loop over batch_size
-            base_path = os.path.join(base_dir, base_name + '-' + str(i))
-            song = self._convert_array2song(array)
+        for batch_id in range(outputs[0].shape[0]):  # Loop over batch_size
+            song = self.batch_builder.reconstruct_batch(outputs, batch_id)
             for recorder in recorders:
                 if recorder.get_input_type() == 'song':
                     input = song
                 elif recorder.get_input_type() == 'array':
-                    input = array
+                    #input = self._convert_song2array(song)
+                    continue  # TODO: For now, pianoroll desactivated
                 else:
                     raise ValueError('Unknown recorder input type.'.format(recorder.get_input_type()))
-                recorder.write_song(input, base_path)
+                base_path = os.path.join(base_dir, base_name + '-' + str(batch_id))
+                #recorder.write_song(input, base_path)

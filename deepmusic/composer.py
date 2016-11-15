@@ -261,7 +261,7 @@ class Composer:
                         self.writer_test.add_summary(outputs_test[0], self.glob_step)
 
                     # Some visualisation (we compute some training/testing samples and compare them to the ground truth)
-                    if False and is_output_visualized:  # TODO: Restore output visualisation
+                    if is_output_visualized:
                         visualization_base_name = os.path.join(self.model_dir, self.TRAINING_VISUALIZATION_DIR, str(self.glob_step))
                         tqdm.write('Visualizing: ' + visualization_base_name)
                         self._visualize_output(

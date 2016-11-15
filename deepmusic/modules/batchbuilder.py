@@ -139,7 +139,17 @@ class BatchBuilder:
         Args:
             raw_song (Song): The song to convert
         Return:
-            RelativeBatch
+            Batch
+        """
+        raise NotImplementedError('Abstract class')
+
+    def reconstruct_batch(self, output, batch_id):
+        """ Create the song associated with the network output
+        Args:
+            output (list[np.Array]): The ouput of the network (size batch_size*output_dim)
+            batch_id (int): The batch that we must reconstruct
+        Return:
+            Song: The reconstructed song
         """
         raise NotImplementedError('Abstract class')
 
@@ -367,6 +377,35 @@ class Relative(BatchBuilder):
         extract = self.create_extract(processed_song, 0, len(processed_song.notes))
         batch = Relative.RelativeBatch([extract])
         return batch
+
+    def reconstruct_batch(self, output, batch_id):
+        """ Create the song associated with the network output
+        Args:
+            output (list[np.Array]): The ouput of the network (size batch_size*output_dim)
+            batch_id (int): The batch id
+        Return:
+            Song: The reconstructed song
+        """
+        assert Relative.HAS_EMPTY == True
+
+        processed_song = Relative.RelativeSong()
+        processed_song.first_note = music.Note()
+        processed_song.first_note.note = 56  # TODO: Define what should be the first note
+        print('Reconstruct')
+        for note in output:
+            relative = Relative.RelativeNote()
+            chosen_label = np.argmax(note[batch_id,:])  # TODO Here if we did sample the output, we should get which has heen the selected output
+            print(chosen_label)
+            if chosen_label == 0:  # <next> token
+                relative.pitch_class = None
+                #relative.scale = # Note used
+                #relative.prev_tick =
+            else:
+                relative.pitch_class = chosen_label-1
+                #relative.scale =
+                #relative.prev_tick =
+            processed_song.notes.append(relative)
+        return self.reconstruct_song(processed_song)
 
     def create_extract(self, processed_song, start, length):
         """ preprocessed song > batch
