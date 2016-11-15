@@ -274,7 +274,7 @@ class Model:
 
         feed_dict = {}
         ops = ()  # For small length, it seems (from my investigations) that tuples are faster than list for merging
-        batch.generate()
+        batch.generate(target=False if self.args.test else True)
 
         # Feed placeholders and choose the ops
         if not self.args.test:  # Training

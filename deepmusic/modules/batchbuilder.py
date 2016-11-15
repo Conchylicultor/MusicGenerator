@@ -364,7 +364,9 @@ class Relative(BatchBuilder):
             RelativeBatch
         """
         processed_song = self.process_song(raw_song)
-        return self.create_extract(processed_song, 0, len(processed_song.notes))
+        extract = self.create_extract(processed_song, 0, len(processed_song.notes))
+        batch = Relative.RelativeBatch([extract])
+        return batch
 
     def create_extract(self, processed_song, start, length):
         """ preprocessed song > batch
