@@ -202,7 +202,7 @@ class Model:
             Return:
                 tf.Tensor: the input at the step i
             """
-            next_input = loop_processing(prev)
+            next_input = self.loop_processing(prev)
 
             # On training, we force the correct input, on testing, we use the previous output as next input
             return tf.cond(self.use_prev[i], lambda: next_input, lambda: self.inputs[i])
