@@ -45,7 +45,9 @@ class SampleSoftmax(LoopProcessing):
         return 'sample_softmax'
 
     def __init__(self, args, *args_module):
+
         self.temperature = 1.0  # Control the sampling (more or less concervative predictions)
+        self.chosen_labels = []  # Keep track of the chosen labels (to reconstruct the chosen song)
 
     def __call__(self, prev_output):
         """ Use TODO formula
@@ -54,8 +56,22 @@ class SampleSoftmax(LoopProcessing):
         Return:
             tf.Ops: the processing operator
         """
-        # TODO
-        return prev_output
+        # Could use the Gumbel-Max trick to sample from a softmax distribution ?
+        # prev_output size: [batch_size, nb_label]
+        soft_values = tf.exp(tf.div(prev_output, self.temperature))  # Pi = exp(pi/t)
+        # soft_values size: [batch_size, nb_label]
+        normalisation_coeff = tf.expand_dims(tf.reduce_sum(soft_values, 1), -1)
+        # normalisation_coeff size: [batch_size, 1]
+        probs = tf.div(soft_values, normalisation_coeff + 1e-8)  # = Pi / sum(Pk)
+        # probs size: [batch_size, nb_label]
+        label_draws = tf.multinomial(probs, 1)  # Draw 1 sample from the distribution
+        # probs label_draws: [batch_size, 1]
+        label_draws = tf.squeeze(label_draws, [1])
+        self.chosen_labels.append(label_draws)
+        # label_draws size: [batch_size,]
+        next_input = tf.one_hot(label_draws, 13)  # Reencode the next input vector (TODO: NO HARDCODED LABEL DIMS; could extract the dim from the input vector)
+        # next_input size: [batch_size, nb_label]
+        return next_input
 
 
 class ActivateScale(LoopProcessing):
