@@ -357,7 +357,7 @@ class MusicData:
 
         return piano_rolls
 
-    def visit_recorder(self, outputs, base_dir, base_name, recorders):
+    def visit_recorder(self, outputs, base_dir, base_name, recorders, chosen_labels=None):
         """ Save the predicted output songs using the given recorder
         Args:
             outputs (List[np.array]): The list of the predictions of the decoder
@@ -366,13 +366,14 @@ class MusicData:
             recorders (List[Obj]): Interfaces called to convert the song into a file (ex: midi or png). The recorders
                 need to implement the method write_song (the method has to add the file extension) and the
                 method get_input_type.
+            chosen_labels (list[np.Array[batch_size, int]]): the chosen class at each timestep (useful to reconstruct the generated song)
         """
 
         if not os.path.exists(base_dir):
             os.makedirs(base_dir)
 
         for batch_id in range(outputs[0].shape[0]):  # Loop over batch_size
-            song = self.batch_builder.reconstruct_batch(outputs, batch_id)
+            song = self.batch_builder.reconstruct_batch(outputs, batch_id)  # TODO: ADD chosen_labels parameter
             for recorder in recorders:
                 if recorder.get_input_type() == 'song':
                     input = song

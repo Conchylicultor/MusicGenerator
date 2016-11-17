@@ -154,6 +154,7 @@ class Model:
         self.target_weights_policy = None
         self.schedule_policy = None
         self.learning_rate_policy = None
+        self.loop_processing = None
 
         # Construct the graphs
         self._build_network()
@@ -190,7 +191,7 @@ class Model:
                 ]
 
         # Define the network
-        loop_processing = ModuleLoader.loop_processings.build_module(self.args)
+        self.loop_processing = ModuleLoader.loop_processings.build_module(self.args)
         def loop_rnn(prev, i):
             """ Loop function used to connect one output of the rnn to the next input.
             The previous input and returned value have to be from the same shape.
@@ -278,7 +279,7 @@ class Model:
 
         # Feed placeholders and choose the ops
         if not self.args.test:  # Training
-            if train_set:
+            if train_set:  # We update the learning rate every x iterations # TODO: What happens when we don't feed the learning rate ??? Stays at the last value ?
                 assert glob_step >= 0
                 feed_dict[self.current_learning_rate] = self.learning_rate_policy.get_learning_rate(glob_step)
 
@@ -306,7 +307,7 @@ class Model:
                     feed_dict[self.inputs[i]] = batch.inputs[0]  # Could be anything but we need it to be from the right shape
                     feed_dict[self.use_prev[i]] = True  # When we don't have an input, we use the previous output instead
 
-            ops += (self.outputs,)
+            ops += (self.loop_processing.get_op(), self.outputs,)  # The loop_processing operator correspond to the recorded softmax sampled
 
         # Return one pass operator
         return ops, feed_dict

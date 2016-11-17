@@ -309,8 +309,8 @@ class Composer:
                 name = next_sample[1]  # Unzip
 
                 ops, feed_dict = self.model.step(batch)
-                assert len(ops) == 1  # output
-                outputs = self.sess.run(ops[0], feed_dict)
+                assert len(ops) == 2  # sampling, output
+                chosen_labels, outputs = self.sess.run(ops, feed_dict)
 
                 model_dir, model_filename = os.path.split(model_name)
                 model_dir = os.path.join(model_dir, self.TESTING_VISUALIZATION_DIR)
@@ -322,7 +322,8 @@ class Composer:
                     outputs,
                     model_dir,
                     model_filename,
-                    [ImgConnector, MidiConnector]
+                    [ImgConnector, MidiConnector],
+                    chosen_labels=chosen_labels
                 )
                 # TODO: Print song statistics (nb of generated notes, closest songs in dataset ?, try to compute a
                 # score to indicate potentially interesting songs (low score if too repetitive) ?,...). Create new

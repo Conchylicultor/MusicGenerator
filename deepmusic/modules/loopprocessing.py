@@ -73,6 +73,12 @@ class SampleSoftmax(LoopProcessing):
         # next_input size: [batch_size, nb_label]
         return next_input
 
+    def get_op():
+        """ Return the chosen labels from the softmax distribution
+        Allows to reconstruct the song
+        """
+        return self.chosen_labels
+
 
 class ActivateScale(LoopProcessing):
     """ Activate using sigmoid and scale the prediction on [-1, 1]

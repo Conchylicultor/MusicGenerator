@@ -177,7 +177,7 @@ class Lstm(DecoderNetwork):
         # TODO: Control over the the Cell using module arguments instead of global arguments (hidden_size and num_layer) !!
         # RNN network
         rnn_cell = tf.nn.rnn_cell.BasicLSTMCell(self.args.hidden_size, state_is_tuple=True)  # Or GRUCell, LSTMCell(args.hidden_size)
-        #rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=1.0, output_keep_prob=1.0)  # TODO: Custom values (WARNING: No dropout when testing !!!, possible to use placeholder ?)
+        rnn_cell = tf.nn.rnn_cell.DropoutWrapper(rnn_cell, input_keep_prob=0.8, output_keep_prob=0.8)  # TODO: Custom values (WARNING: No dropout when testing !!!, possible to use placeholder ?)
         rnn_cell = tf.nn.rnn_cell.MultiRNNCell([rnn_cell] * self.args.num_layers, state_is_tuple=True)
 
         self.rnn_cell = rnn_cell
