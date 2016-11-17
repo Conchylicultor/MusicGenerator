@@ -394,8 +394,8 @@ class Relative(BatchBuilder):
         print('Reconstruct')
         for note in output:
             relative = Relative.RelativeNote()
-            chosen_label = np.argmax(note[batch_id,:])  # TODO Here if we did sample the output, we should get which has heen the selected output
-            print(chosen_label)
+            chosen_label = int(np.argmax(note[batch_id,:]))  # Cast np.int64 to int to avoid compatibility with mido # TODO Here if we did sample the output, we should get which has heen the selected output
+            print(chosen_label, end=' ')  # TODO: Add a text output connector
             if chosen_label == 0:  # <next> token
                 relative.pitch_class = None
                 #relative.scale = # Note used
@@ -405,6 +405,7 @@ class Relative(BatchBuilder):
                 #relative.scale =
                 #relative.prev_tick =
             processed_song.notes.append(relative)
+        print()
         return self.reconstruct_song(processed_song)
 
     def create_extract(self, processed_song, start, length):

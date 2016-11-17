@@ -382,4 +382,4 @@ class MusicData:
                 else:
                     raise ValueError('Unknown recorder input type.'.format(recorder.get_input_type()))
                 base_path = os.path.join(base_dir, base_name + '-' + str(batch_id))
-                #recorder.write_song(input, base_path)
+                recorder.write_song(input, base_path)

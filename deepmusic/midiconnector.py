@@ -227,7 +227,7 @@ class MidiConnector:
                 # Add all messages in absolute time
                 messages.append(mido.Message(
                     'note_on',
-                    note=note.note,
+                    note=note.note,  # WARNING: The note should be int (NOT np.int64)
                     velocity=64,
                     channel=i,
                     time=note.tick))
