@@ -119,7 +119,7 @@ class Composer:
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
         ModuleLoader.enco_cells.add_argparse(nn_args, 'Encoder cell used.')
         ModuleLoader.deco_cells.add_argparse(nn_args, 'Decoder cell used.')
-        nn_args.add_argument('--hidden_size', type=int, default=256, help='Size of one neural network layer')
+        nn_args.add_argument('--hidden_size', type=int, default=512, help='Size of one neural network layer')
         nn_args.add_argument('--num_layers', type=int, default=2, help='Nb of layers of the RNN')
         nn_args.add_argument('--scheduled_sampling', type=str, nargs='+', default=[Model.ScheduledSamplingPolicy.NONE], help='Define the schedule sampling policy. If set, have to indicates the parameters of the chosen policy')
         nn_args.add_argument('--target_weights', nargs='?', choices=Model.TargetWeightsPolicy.get_policies(), default=Model.TargetWeightsPolicy.LINEAR,

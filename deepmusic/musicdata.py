@@ -373,7 +373,7 @@ class MusicData:
             os.makedirs(base_dir)
 
         for batch_id in range(outputs[0].shape[0]):  # Loop over batch_size
-            song = self.batch_builder.reconstruct_batch(outputs, batch_id)  # TODO: ADD chosen_labels parameter
+            song = self.batch_builder.reconstruct_batch(outputs, batch_id, chosen_labels)
             for recorder in recorders:
                 if recorder.get_input_type() == 'song':
                     input = song

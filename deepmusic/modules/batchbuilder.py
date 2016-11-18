@@ -143,11 +143,12 @@ class BatchBuilder:
         """
         raise NotImplementedError('Abstract class')
 
-    def reconstruct_batch(self, output, batch_id):
+    def reconstruct_batch(self, output, batch_id, chosen_labels=None):
         """ Create the song associated with the network output
         Args:
             output (list[np.Array]): The ouput of the network (size batch_size*output_dim)
             batch_id (int): The batch that we must reconstruct
+            chosen_labels (list[np.Array[batch_size, int]]): the sampled class at each timestep (useful to reconstruct the generated song)
         Return:
             Song: The reconstructed song
         """
@@ -378,11 +379,12 @@ class Relative(BatchBuilder):
         batch = Relative.RelativeBatch([extract])
         return batch
 
-    def reconstruct_batch(self, output, batch_id):
+    def reconstruct_batch(self, output, batch_id, chosen_labels=None):
         """ Create the song associated with the network output
         Args:
             output (list[np.Array]): The ouput of the network (size batch_size*output_dim)
             batch_id (int): The batch id
+            chosen_labels (list[np.Array[batch_size, int]]): the sampled class at each timestep (useful to reconstruct the generated song)
         Return:
             Song: The reconstructed song
         """
@@ -392,9 +394,13 @@ class Relative(BatchBuilder):
         processed_song.first_note = music.Note()
         processed_song.first_note.note = 56  # TODO: Define what should be the first note
         print('Reconstruct')
-        for note in output:
+        for i, note in enumerate(output):
             relative = Relative.RelativeNote()
-            chosen_label = int(np.argmax(note[batch_id,:]))  # Cast np.int64 to int to avoid compatibility with mido # TODO Here if we did sample the output, we should get which has heen the selected output
+            # Here if we did sample the output, we should get which has heen the selected output
+            if not chosen_labels or i == len(chosen_labels):  # If chosen_labels, the last generated note has not been sampled
+                chosen_label = int(np.argmax(note[batch_id,:]))  # Cast np.int64 to int to avoid compatibility with mido
+            else:
+                chosen_label = int(chosen_labels[i][batch_id])
             print(chosen_label, end=' ')  # TODO: Add a text output connector
             if chosen_label == 0:  # <next> token
                 relative.pitch_class = None
