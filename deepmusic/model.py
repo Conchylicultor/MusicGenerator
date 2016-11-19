@@ -1,4 +1,4 @@
-# Copyright 2015 Conchylicultor. All Rights Reserved.
+# Copyright 2016 Conchylicultor. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ Model to generate new songs
 import numpy as np  # To generate random numbers
 import tensorflow as tf
 
-from deepmusic.musicdata import Batch
+from deepmusic.moduleloader import ModuleLoader
 from deepmusic.keyboardcell import KeyboardCell
 import deepmusic.songstruct as music
 
@@ -130,130 +130,6 @@ class Model:
             """
             return self.sampling_policy_fct(glob_step)
 
-    class LearningRatePolicy:
-        """ Contains the different policies for the learning rate decay
-        """
-        CST = 'cst'  # Fixed learning rate over all steps (default behavior)
-        STEP = 'step'  # We divide the learning rate every x iterations
-        EXPONENTIAL = 'exponential'  #
-
-        @staticmethod
-        def get_policies():
-            """ Return the list of the different modes
-            Useful when parsing the command lines arguments
-            """
-            return [
-                Model.LearningRatePolicy.CST,
-                Model.LearningRatePolicy.STEP,
-                Model.LearningRatePolicy.EXPONENTIAL
-            ]
-
-        def __init__(self, args):
-            """
-            Args:
-                args: parameters of the model
-            """
-            self.learning_rate_fct = None
-
-            assert args.learning_rate
-            assert len(args.learning_rate) > 0
-
-            policy = args.learning_rate[0]
-
-            if policy == Model.LearningRatePolicy.CST:
-                if not len(args.learning_rate) == 2:
-                    raise ValueError('Learning rate cst policy should be on the form: {} lr_value'.format(Model.LearningRatePolicy.CST))
-                self.learning_rate_init = float(args.learning_rate[1])
-                self.learning_rate_fct = self._lr_cst
-
-            elif policy == Model.LearningRatePolicy.STEP:
-                if not len(args.learning_rate) == 3:
-                    raise ValueError('Learning rate step policy should be on the form: {} lr_init decay_period'.format(Model.LearningRatePolicy.STEP))
-                self.learning_rate_init = float(args.learning_rate[1])
-                self.decay_period = int(args.learning_rate[2])
-                self.learning_rate_fct = self._lr_step
-
-            elif policy == Model.LearningRatePolicy.EXPONENTIAL:
-                raise NotImplementedError('Exponential learning rate policy not implemented yet, please consider another policy')
-
-            else:
-                raise ValueError('Unknown chosen learning rate policy: {}'.format(policy))
-
-        def _lr_cst(self, glob_step):
-            """ Just a constant learning rate
-            """
-            return self.learning_rate_init
-
-        def _lr_step(self, glob_step):
-            """ Every decay period, the learning rate is divided by 2
-            """
-            return self.learning_rate_init / 2**(glob_step//self.decay_period)
-
-        def get_learning_rate(self, glob_step):
-            """ Return the learning rate associated at the current training step
-            Args:
-                glob_step (int): Number of iterations since the beginning of training
-            Return:
-                float: the learning rate at the given step
-            """
-            return self.learning_rate_fct(glob_step)
-
-    class EncoderNetwork:
-        """ From the previous keyboard configuration, prepare the state for the next one
-        """
-        @staticmethod
-        def get_cell(prev_keyboard, prev_state):
-            prev_state_enco, prev_state_deco = prev_state
-
-            # TODO
-            next_state_enco = prev_state_enco
-
-            return next_state_enco
-
-    class DecoderNetwork:
-        """ Predict a keyboard configuration at step t
-        """
-        def __init__(self, args):
-            """
-            Args:
-                args: parameters of the model
-            """
-            self.args = args
-
-            # Projection on the keyboard
-            with tf.variable_scope('weights_note_projection'):
-                self.W = tf.get_variable(
-                    'weights',
-                    [self.args.hidden_size, music.NB_NOTES],
-                    initializer=tf.truncated_normal_initializer()  # TODO: Tune value (fct of hidden size)
-                )
-                self.b = tf.get_variable(
-                    'bias',
-                    [music.NB_NOTES],
-                    initializer=tf.constant_initializer()
-                )
-
-            # TODO: DELETE
-            with tf.variable_scope('weights_to_delete'):
-                self.W_to_delete = tf.get_variable(
-                    'weights',
-                    [music.NB_NOTES, self.args.hidden_size],
-                    initializer=tf.truncated_normal_initializer()
-                )
-
-        def _project_note(self, X):
-            with tf.name_scope('note_projection'):
-                return tf.matmul(X, self.W) + self.b  # [batch_size, NB_NOTE]
-
-        def get_cell(self, prev_keyboard, prev_state_enco):
-
-            # TODO
-            hidden_state = tf.matmul(prev_keyboard, self.W_to_delete)
-            next_keyboard = self._project_note(hidden_state)
-            next_state_deco = prev_state_enco  # Return the last state (Useful ?)
-
-            return next_keyboard, next_state_deco
-
     def __init__(self, args):
         """
         Args:
@@ -278,6 +154,7 @@ class Model:
         self.target_weights_policy = None
         self.schedule_policy = None
         self.learning_rate_policy = None
+        self.loop_processing = None
 
         # Construct the graphs
         self._build_network()
@@ -285,21 +162,22 @@ class Model:
     def _build_network(self):
         """ Create the computational graph
         """
+        input_dim = ModuleLoader.batch_builders.get_module().get_input_dim()
 
         # Placeholders (Use tf.SparseTensor with training=False instead) (TODO: Try restoring dynamic batch_size)
         with tf.name_scope('placeholder_inputs'):
             self.inputs = [
                 tf.placeholder(
                     tf.float32,  # -1.0/1.0 ? Probably better for the sigmoid
-                    [self.args.batch_size, music.NB_NOTES],
+                    [self.args.batch_size, input_dim],  # TODO: Get input size from batch_builder
                     name='input')
                 for _ in range(self.args.sample_length)
                 ]
         with tf.name_scope('placeholder_targets'):
             self.targets = [
                 tf.placeholder(
-                    tf.float32,  # 0/1
-                    [self.args.batch_size, music.NB_NOTES],
+                    tf.int32,  # 0/1  # TODO: Int for sofmax, Float for sigmoid
+                    [self.args.batch_size,],  # TODO: For softmax, only 1d, for sigmoid, 2d (batch_size, num_class)
                     name='target')
                 for _ in range(self.args.sample_length)
                 ]
@@ -313,7 +191,7 @@ class Model:
                 ]
 
         # Define the network
-
+        self.loop_processing = ModuleLoader.loop_processings.build_module(self.args)
         def loop_rnn(prev, i):
             """ Loop function used to connect one output of the rnn to the next input.
             The previous input and returned value have to be from the same shape.
@@ -324,24 +202,12 @@ class Model:
             Return:
                 tf.Tensor: the input at the step i
             """
-            def activate_and_scale(X):
-                """ Predict the output from prev and scale the result on [-1, 1]
-                Use sigmoid activation
-                Args:
-                    X (tf.Tensor): the input
-                Return:
-                    tf.Ops: the activate_and_scale operator
-                """
-                # TODO: Use tanh instead ? tanh=2*sigm(2*x)-1
-                with tf.name_scope('activate_and_scale'):
-                    return tf.sub(tf.mul(2.0, tf.nn.sigmoid(X)), 1.0)  # x_{i} = 2*sigmoid(y_{i-1}) - 1
-
-            next_input = activate_and_scale(prev)
+            next_input = self.loop_processing(prev)
 
             # On training, we force the correct input, on testing, we use the previous output as next input
             return tf.cond(self.use_prev[i], lambda: next_input, lambda: self.inputs[i])
 
-        # TODO: Try attention decoder
+        # TODO: Try attention decoder/use dynamic_rnn instead
         self.outputs, self.final_state = tf.nn.seq2seq.rnn_decoder(
             decoder_inputs=self.inputs,
             initial_state=None,  # The initial state is defined inside KeyboardCell
@@ -358,21 +224,24 @@ class Model:
             # note but not in the right pitch (ex: C4 instead of C5), with a decay the further the prediction
             # is (D5 and D1 more penalized than D4 and D3 if the target is D2)
 
-            # For now, by using sigmoid_cross_entropy_with_logits, the task is formulated as a NB_NOTES binary
+            # For the piano roll mode, by using sigmoid_cross_entropy_with_logits, the task is formulated as a NB_NOTES binary
             # classification problems
+
+            # For the relative note experiment, it use a standard SoftMax where the label is the relative position to the previous
+            # note
 
             self.schedule_policy = Model.ScheduledSamplingPolicy(self.args)
             self.target_weights_policy = Model.TargetWeightsPolicy(self.args)
-            self.learning_rate_policy = Model.LearningRatePolicy(self.args)  # Load the chosen policies
+            self.learning_rate_policy = ModuleLoader.learning_rate_policies.build_module(self.args)  # Load the chosen policies
 
             # TODO: If train on different length, check that the loss is proportional to the length or average ???
             loss_fct = tf.nn.seq2seq.sequence_loss(
                 self.outputs,
                 self.targets,
                 [tf.constant(self.target_weights_policy.get_weight(i), shape=self.targets[0].get_shape()) for i in range(len(self.targets))],  # Weights
-                softmax_loss_function=tf.nn.sigmoid_cross_entropy_with_logits,
-                average_across_timesteps=False,  # I think it's best for variables length sequences (specially with the target weights=0), isn't it (it implies also that short sequences are less penalized than long ones) ? (TODO: For variables length sequences, be careful about the target weights)
-                average_across_batch=False  # Penalize by sample (should allows dynamic batch size) Warning: need to tune the learning rate
+                #softmax_loss_function=tf.nn.softmax_cross_entropy_with_logits,  # Previous: tf.nn.sigmoid_cross_entropy_with_logits TODO: Use option to choose. (new module ?)
+                average_across_timesteps=True,  # Before: I think it's best for variables length sequences (specially with the target weights=0), isn't it (it implies also that short sequences are less penalized than long ones) ? (TODO: For variables length sequences, be careful about the target weights)
+                average_across_batch=True  # Before: Penalize by sample (should allows dynamic batch size) Warning: need to tune the learning rate
             )
             tf.scalar_summary('training_loss', loss_fct)  # Keep track of the cost
 
@@ -404,13 +273,13 @@ class Model:
         """
         # TODO: Could optimize feeding between train/test/generating (compress code)
 
-        # Feed the dictionary
         feed_dict = {}
         ops = ()  # For small length, it seems (from my investigations) that tuples are faster than list for merging
+        batch.generate(target=False if self.args.test else True)
 
         # Feed placeholders and choose the ops
         if not self.args.test:  # Training
-            if train_set:
+            if train_set:  # We update the learning rate every x iterations # TODO: What happens when we don't feed the learning rate ??? Stays at the last value ?
                 assert glob_step >= 0
                 feed_dict[self.current_learning_rate] = self.learning_rate_policy.get_learning_rate(glob_step)
 
@@ -438,7 +307,7 @@ class Model:
                     feed_dict[self.inputs[i]] = batch.inputs[0]  # Could be anything but we need it to be from the right shape
                     feed_dict[self.use_prev[i]] = True  # When we don't have an input, we use the previous output instead
 
-            ops += (self.outputs,)
+            ops += (self.loop_processing.get_op(), self.outputs,)  # The loop_processing operator correspond to the recorded softmax sampled
 
         # Return one pass operator
         return ops, feed_dict

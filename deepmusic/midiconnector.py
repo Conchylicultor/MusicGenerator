@@ -1,4 +1,4 @@
-# Copyright 2015 Conchylicultor. All Rights Reserved.
+# Copyright 2016 Conchylicultor. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -227,7 +227,7 @@ class MidiConnector:
                 # Add all messages in absolute time
                 messages.append(mido.Message(
                     'note_on',
-                    note=note.note,
+                    note=note.note,  # WARNING: The note should be int (NOT np.int64)
                     velocity=64,
                     channel=i,
                     time=note.tick))

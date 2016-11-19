@@ -1,4 +1,4 @@
-# Copyright 2015 Conchylicultor. All Rights Reserved.
+# Copyright 2016 Conchylicultor. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,16 +23,15 @@ import argparse  # Command line parsing
 import configparser  # Saving the models parameters
 import datetime  # Chronometer
 import os  # Files management
-from typing import Dict, Tuple, List
 from tqdm import tqdm  # Progress bar
 import tensorflow as tf
-import gc
+import gc  # Manual garbage collect before each epoch
 
+from deepmusic.moduleloader import ModuleLoader
 from deepmusic.musicdata import MusicData
 from deepmusic.midiconnector import MidiConnector
 from deepmusic.imgconnector import ImgConnector
-from deepmusic.model_old import Model
-from deepmusic.keyboardcell import KeyboardCell
+from deepmusic.model import Model
 
 
 class Composer:
@@ -45,13 +44,14 @@ class Composer:
         """
         ALL = 'all'  # The network try to generate a new original composition with all models present (with the tag)
         DAEMON = 'daemon'  # Runs on background and can regularly be called to predict something (Not implemented)
+        INTERACTIVE = 'interactive'  # The user start a melodie and the neural network complete (Not implemented)
 
         @staticmethod
-        def get_test_modes() -> List[str]:
+        def get_test_modes():
             """ Return the list of the different testing modes
             Useful on when parsing the command lines arguments
             """
-            return [Composer.TestMode.ALL, Composer.TestMode.DAEMON]
+            return [Composer.TestMode.ALL, Composer.TestMode.DAEMON, Composer.TestMode.INTERACTIVE]
 
     def __init__(self):
         """
@@ -78,7 +78,7 @@ class Composer:
         self.MODEL_NAME_BASE = 'model'
         self.MODEL_EXT = '.ckpt'
         self.CONFIG_FILENAME = 'params.ini'
-        self.CONFIG_VERSION = '0.3'  # Ensure to raise a warning if there is a change in the format
+        self.CONFIG_VERSION = '0.5'  # Ensure to raise a warning if there is a change in the format
 
         self.TRAINING_VISUALIZATION_STEP = 1000  # Plot a training sample every x iterations (Warning: There is a really low probability that on a epoch, it's always the same testing bach which is visualized)
         self.TRAINING_VISUALIZATION_DIR = 'progression'
@@ -106,30 +106,33 @@ class Composer:
         global_args.add_argument('--sample_length', type=int, default=40, help='number of time units (steps) of a training sentence, length of the sequence to generate')  # Warning: the unit is defined by the MusicData.MAXIMUM_SONG_RESOLUTION parameter
         global_args.add_argument('--root_dir', type=str, default=None, help='folder where to look for the models and data')
         global_args.add_argument('--device', type=str, default=None, help='\'gpu\' or \'cpu\' (Warning: make sure you have enough free RAM), allow to choose on which hardware run the model')
+        global_args.add_argument('--temperature', type=float, default=1.0, help='Used when testing, control the ouput sampling')
 
         # Dataset options
         dataset_args = parser.add_argument_group('Dataset options')
         dataset_args.add_argument('--dataset_tag', type=str, default='ragtimemusic', help='tag to differentiate which data use (if the data are not present, the program will try to generate from the midi folder)')
         dataset_args.add_argument('--create_dataset', action='store_true', help='if present, the program will only generate the dataset from the corpus (no training/testing)')
         dataset_args.add_argument('--play_dataset', type=int, nargs='?', const=10, default=None,  help='if set, the program  will randomly play some samples(can be use conjointly with create_dataset if this is the only action you want to perform)')  # TODO: Play midi ? / Or show sample images ? Both ?
-        dataset_args.add_argument('--ratio_dataset', type=float, default=0.9, help='ratio of songs between training/testing')
+        dataset_args.add_argument('--ratio_dataset', type=float, default=0.9, help='ratio of songs between training/testing. The ratio is fixed at the beginning and cannot be changed')
+        ModuleLoader.batch_builders.add_argparse(dataset_args, 'Control the song representation for the inputs of the neural network.')
 
         # Network options (Warning: if modifying something here, also make the change on save/restore_params() )
         nn_args = parser.add_argument_group('Network options', 'architecture related option')
-        nn_args.add_argument('--enco', choices=KeyboardCell.get_enco_choices(), default=KeyboardCell.get_enco_choices()[0], help='Encoder cell used')  # TODO: Could add other parameters with nargs='?' with '**' instead of '--', parsed inside KeyboardCell (+ cell.save/cell.load fct)
-        nn_args.add_argument('--deco', choices=KeyboardCell.get_deco_choices(), default=KeyboardCell.get_deco_choices()[0], help='Decoder cell used')
-        nn_args.add_argument('--hidden_size', type=int, default=256, help='Size of one neural network layer')
+        ModuleLoader.enco_cells.add_argparse(nn_args, 'Encoder cell used.')
+        ModuleLoader.deco_cells.add_argparse(nn_args, 'Decoder cell used.')
+        nn_args.add_argument('--hidden_size', type=int, default=512, help='Size of one neural network layer')
         nn_args.add_argument('--num_layers', type=int, default=2, help='Nb of layers of the RNN')
         nn_args.add_argument('--scheduled_sampling', type=str, nargs='+', default=[Model.ScheduledSamplingPolicy.NONE], help='Define the schedule sampling policy. If set, have to indicates the parameters of the chosen policy')
         nn_args.add_argument('--target_weights', nargs='?', choices=Model.TargetWeightsPolicy.get_policies(), default=Model.TargetWeightsPolicy.LINEAR,
                              help='policy to choose the loss contribution of each step')
+        ModuleLoader.loop_processings.add_argparse(nn_args, 'Transformation to apply on each ouput.')
 
         # Training options (Warning: if modifying something here, also make the change on save/restore_params() )
         training_args = parser.add_argument_group('Training options')
         training_args.add_argument('--num_epochs', type=int, default=0, help='maximum number of epochs to run (0 for infinity)')
         training_args.add_argument('--save_every', type=int, default=1000, help='nb of mini-batch step before creating a model checkpoint')
-        training_args.add_argument('--batch_size', type=int, default=10, help='mini-batch size')
-        training_args.add_argument('--learning_rate', type=str, nargs='+', default=[Model.LearningRatePolicy.CST, '0.0001'], help='Learning rate (available: {})'.format(Model.LearningRatePolicy.get_policies()))
+        training_args.add_argument('--batch_size', type=int, default=64, help='mini-batch size')
+        ModuleLoader.learning_rate_policies.add_argparse(training_args, 'Learning rate initial value and decay policy.')
         training_args.add_argument('--testing_curve', type=int, default=10, help='Also record the testing curve each every x iteration (given by the parameter)')
 
         return parser.parse_args(args)
@@ -146,6 +149,7 @@ class Composer:
 
         tf.logging.set_verbosity(tf.logging.INFO)  # DEBUG, INFO, WARN (default), ERROR, or FATAL
 
+        ModuleLoader.register_all()  # Load available modules
         self.args = self._parse_args(args)
         if not self.args.root_dir:
             self.args.root_dir = os.getcwd()  # Use the current working directory
@@ -224,13 +228,13 @@ class Composer:
                 # Explicit garbage collector call (clear the previous batches)
                 gc.collect()  # TODO: Better memory management (use generators,...)
 
-                batches_train = self.music_data.get_batches(train_set=True)
-                batches_test = self.music_data.get_batches(train_set=False)
+                batches_train, batches_test = self.music_data.get_batches()
 
                 # Also update learning parameters eventually ?? (Some is done in the model class with the policy classes)
 
                 tic = datetime.datetime.now()
                 for next_batch in tqdm(batches_train, desc='Training'):  # Iterate over the batches
+                    # TODO: Could compute the perfs (time forward pass vs time batch pre-processing)
                     # Indicate if the output should be computed or not
                     is_output_visualized = self.glob_step % self.TRAINING_VISUALIZATION_STEP == 0
 
@@ -294,7 +298,7 @@ class Composer:
             print('Warning: No model found in \'{}\'. Please train a model before trying to predict'.format(self.model_dir))
             return
 
-        batches, names = self.music_data.get_batches_test()
+        batches, names = self.music_data.get_batches_test_old()
         samples = list(zip(batches, names))
 
         # Predicting for each model present in modelDir
@@ -306,8 +310,8 @@ class Composer:
                 name = next_sample[1]  # Unzip
 
                 ops, feed_dict = self.model.step(batch)
-                assert len(ops) == 1  # output
-                outputs = self.sess.run(ops[0], feed_dict)
+                assert len(ops) == 2  # sampling, output
+                chosen_labels, outputs = self.sess.run(ops, feed_dict)
 
                 model_dir, model_filename = os.path.split(model_name)
                 model_dir = os.path.join(model_dir, self.TESTING_VISUALIZATION_DIR)
@@ -319,7 +323,8 @@ class Composer:
                     outputs,
                     model_dir,
                     model_filename,
-                    [ImgConnector, MidiConnector]
+                    [ImgConnector, MidiConnector],
+                    chosen_labels=chosen_labels
                 )
                 # TODO: Print song statistics (nb of generated notes, closest songs in dataset ?, try to compute a
                 # score to indicate potentially interesting songs (low score if too repetitive) ?,...). Create new
@@ -446,18 +451,17 @@ class Composer:
             if not self.args.test:  # When testing, we don't use the training length
                 self.args.sample_length = config['General'].getint('sample_length')
 
-            self.args.enco = config['Network'].get('enco')
-            self.args.deco = config['Network'].get('deco')
             self.args.hidden_size = config['Network'].getint('hidden_size')
             self.args.num_layers = config['Network'].getint('num_layers')
             self.args.target_weights = config['Network'].get('target_weights')
             self.args.scheduled_sampling = config['Network'].get('scheduled_sampling').split(' ')
 
-            self.args.learning_rate = config['Training'].get('learning_rate').split(' ')
             self.args.batch_size = config['Training'].getint('batch_size')
             self.args.save_every = config['Training'].getint('save_every')
             self.args.ratio_dataset = config['Training'].getfloat('ratio_dataset')
             self.args.testing_curve = config['Training'].getint('testing_curve')
+
+            ModuleLoader.load_all(self.args, config)
 
             # Show the restored params
             print('Warning: Restoring parameters from previous configuration (you should manually edit the file if you want to change one of those)')
@@ -480,8 +484,6 @@ class Composer:
         config['General']['sample_length'] = str(self.args.sample_length)
 
         config['Network'] = {}
-        config['Network']['enco'] = self.args.enco
-        config['Network']['deco'] = self.args.deco
         config['Network']['hidden_size'] = str(self.args.hidden_size)
         config['Network']['num_layers'] = str(self.args.num_layers)
         config['Network']['target_weights'] = self.args.target_weights  # Could be modified manually
@@ -489,11 +491,13 @@ class Composer:
 
         # Keep track of the learning params (are not model dependent so can be manually edited)
         config['Training'] = {}
-        config['Training']['learning_rate'] = ' '.join(self.args.learning_rate)
         config['Training']['batch_size'] = str(self.args.batch_size)
         config['Training']['save_every'] = str(self.args.save_every)
         config['Training']['ratio_dataset'] = str(self.args.ratio_dataset)
         config['Training']['testing_curve'] = str(self.args.testing_curve)
+
+        # Save the chosen modules and their configuration
+        ModuleLoader.save_all(config)
 
         with open(os.path.join(self.model_dir, self.CONFIG_FILENAME), 'w') as config_file:
             config.write(config_file)
@@ -501,24 +505,25 @@ class Composer:
     def _print_params(self):
         """ Print the current params
         """
+        print()
         print('Current parameters:')
         print('glob_step: {}'.format(self.glob_step))
         print('keep_all: {}'.format(self.args.keep_all))
         print('dataset_tag: {}'.format(self.args.dataset_tag))
         print('sample_length: {}'.format(self.args.sample_length))
 
-        print('enco: {}'.format(self.args.enco))
-        print('deco: {}'.format(self.args.deco))
         print('hidden_size: {}'.format(self.args.hidden_size))
         print('num_layers: {}'.format(self.args.num_layers))
         print('target_weights: {}'.format(self.args.target_weights))
         print('scheduled_sampling: {}'.format(' '.join(self.args.scheduled_sampling)))
 
-        print('learning_rate: {}'.format(' '.join(self.args.learning_rate)))
         print('batch_size: {}'.format(self.args.batch_size))
         print('save_every: {}'.format(self.args.save_every))
         print('ratio_dataset: {}'.format(self.args.ratio_dataset))
         print('testing_curve: {}'.format(self.args.testing_curve))
+
+        ModuleLoader.print_all(self.args)
+        print()
 
     def _get_model_name(self):
         """ Parse the argument to decide were to save/load the model
@@ -544,7 +549,7 @@ class Composer:
         """
         if self.args.device == 'cpu':
             return '"/cpu:0'
-        elif self.args.device == 'gpu':
+        elif self.args.device == 'gpu':  # Won't work in case of multiple GPUs
             return '/gpu:0'
         elif self.args.device is None:  # No specified device (default)
             return None

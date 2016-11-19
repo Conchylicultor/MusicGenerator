@@ -1,4 +1,4 @@
-# Copyright 2015 Conchylicultor. All Rights Reserved.
+# Copyright 2016 Conchylicultor. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,20 +21,12 @@ from tqdm import tqdm  # Progress bar when creating dataset
 import pickle  # Saving the data
 import os  # Checking file existence
 import numpy as np  # Batch data
-import json
-# TODO: import cv2  # Plot the piano roll
+import json  # Load initiators (inputs for generating new songs)
 
+from deepmusic.moduleloader import ModuleLoader
 from deepmusic.midiconnector import MidiConnector
 from deepmusic.midiconnector import MidiInvalidException
 import deepmusic.songstruct as music
-
-
-class Batch:
-    """Structure containing batches info
-    """
-    def __init__(self):
-        self.inputs = []
-        self.targets = []
 
 
 class MusicData:
@@ -50,16 +42,12 @@ class MusicData:
         # Filename and directories constants
         self.DATA_VERSION = '0.2'  # Assert compatibility between versions
         self.DATA_DIR_MIDI = 'data/midi'  # Originals midi files
+        self.DATA_DIR_PLAY = 'data/play'  # Target folder to show the reconstructed files
         self.DATA_DIR_SAMPLES = 'data/samples'  # Training/testing samples after pre-processing
+        self.DATA_SAMPLES_RAW = 'raw'  # Unpreprocessed songs container tag
         self.DATA_SAMPLES_EXT = '.pkl'
         self.TEST_INIT_FILE = 'data/test/initiator.json'  # Initial input for the generated songs
         self.FILE_EXT = '.mid'  # Could eventually add support for other format later ?
-
-        # Define the time unit
-        # Invert of time note which define the maximum resolution for a song. Ex: 2 for 1/2 note, 4 for 1/4 of note
-        # TODO: Where to define ? Should be in self.args.
-        self.MAXIMUM_SONG_RESOLUTION = 4
-        self.NOTES_PER_BAR = 4
 
         # Model parameters
         self.args = args
@@ -69,10 +57,18 @@ class MusicData:
         self.songs_train = None
         self.songs_test = None
 
+        # TODO: Dynamic loading of the the associated dataset flag (ex: data/samples/pianoroll/...)
+        self.batch_builder = ModuleLoader.batch_builders.build_module(args)
+
         if not self.args.test:  # No need to load the dataset when testing
             self._restore_dataset()
 
             if self.args.play_dataset:
+                print('Play some songs from the formatted data')
+                # Generate songs
+                for i in range(min(10, len(self.songs))):
+                    raw_song = self.batch_builder.reconstruct_song(self.songs[i])
+                    MidiConnector.write_song(raw_song, os.path.join(self.DATA_DIR_PLAY, str(i)))
                 # TODO: Display some images corresponding to the loaded songs
                 raise NotImplementedError('Can\'t play a song for now')
 
@@ -80,35 +76,60 @@ class MusicData:
 
             # Plot some stats:
             print('Loaded: {} songs ({} train/{} test)'.format(
-                len(self.songs),
+                len(self.songs_train) + len(self.songs_test),
                 len(self.songs_train),
                 len(self.songs_test))
             )  # TODO: Print average, max, min duration
 
     def _restore_dataset(self):
         """Load/create the conversations data
+        Done in two steps:
+         * Extract the midi files as a raw song format
+         * Transform this raw song as neural networks compatible input
         """
 
-        # Construct the dataset name
-        samples_path = os.path.join(
+        # Construct the dataset names
+        samples_path_generic = os.path.join(
             self.args.root_dir,
             self.DATA_DIR_SAMPLES,
-            self.args.dataset_tag + self.DATA_SAMPLES_EXT
+            self.args.dataset_tag + '-{}' + self.DATA_SAMPLES_EXT
         )
+        samples_path_raw = samples_path_generic.format(self.DATA_SAMPLES_RAW)
+        samples_path_preprocessed = samples_path_generic.format(ModuleLoader.batch_builders.get_chosen_name())
 
-        # Restoring precomputed model
-        if os.path.exists(samples_path):
-            print('Restoring dataset from {}...'.format(samples_path))
-            self._restore_samples(samples_path)
+        # TODO: the _restore_samples from the raw songs and precomputed database should have different versions number
+
+        # Restoring precomputed database
+        if os.path.exists(samples_path_preprocessed):
+            print('Restoring dataset from {}...'.format(samples_path_preprocessed))
+            self._restore_samples(samples_path_preprocessed)
 
         # First time we load the database: creating all files
         else:
-            print('Training samples not found. Creating dataset...')
-            self._create_samples()
+            print('Training samples not found. Creating dataset from the songs...')
+            # Restoring raw songs
+            if os.path.exists(samples_path_raw):
+                print('Restoring songs from {}...'.format(samples_path_raw))
+                self._restore_samples(samples_path_raw)
+
+            # First time we load the database: creating all files
+            else:
+                print('Raw songs not found. Extracting from midi files...')
+                self._create_raw_songs()
+                print('Saving raw songs...')
+                self._save_samples(samples_path_raw)
+
+            # At this point, self.songs contain the list of the raw songs. Each
+            # song is then preprocessed by the batch builder
+
+            # Generating the data from the raw songs
+            print('Pre-processing songs...')
+            for i, song in tqdm(enumerate(self.songs), total=len(self.songs)):
+                self.songs[i] = self.batch_builder.process_song(song)
 
             print('Saving dataset...')
             np.random.shuffle(self.songs)  # Important to do that before saving so the train/test set will be fixed each time we reload the dataset
-            self._save_samples(samples_path)
+            self._save_samples(samples_path_preprocessed)
 
     def _restore_samples(self, samples_path):
         """ Load samples from file
@@ -141,7 +162,7 @@ class MusicData:
             }
             pickle.dump(data, handle, -1)  # Using the highest protocol available
 
-    def _create_samples(self):
+    def _create_raw_songs(self):
         """ Create the database from the midi files
         """
         midi_dir = os.path.join(self.args.root_dir, self.DATA_DIR_MIDI, self.args.dataset_tag)
@@ -154,18 +175,16 @@ class MusicData:
             except MidiInvalidException as e:
                 tqdm.write('File ignored ({}): {}'.format(filename, e))
             else:
-                self.songs.append(self._convert_song2array(new_song))
+                self.songs.append(new_song)
                 tqdm.write('Song loaded {}: {} tracks, {} notes, {} ticks/beat'.format(
                     filename,
                     len(new_song.tracks),
                     sum([len(t.notes) for t in new_song.tracks]),
-                    new_song.ticks_per_beat)
-                )
+                    new_song.ticks_per_beat
+                ))
 
         if not self.songs:
             raise ValueError('Empty dataset. Check that the folder exist and contains supported midi files.')
-
-        pass
 
     def _convert_song2array(self, song):
         """ Convert a given song to a numpy multi-dimensional array (piano roll)
@@ -226,113 +245,46 @@ class MusicData:
 
         return new_song
 
-    def _get_scale(self, song):
-        """ Compute the unit scale factor for the given song
-        The scale factor allow to have a tempo independent time unit, to represent the song as an array
-        of dimension [key, time_unit]. Once computed, one has just to divide (//) the ticks or multiply
-        the time units to go from one representation to the other.
-
-        Args:
-            song (Song): a song object from which will be extracted the tempo information
-        Return:
-            int: the scale factor for the current song
-        """
-
-        # TODO: Assert that the scale factor is not a float (the % =0)
-        return 4 * song.ticks_per_beat // (self.MAXIMUM_SONG_RESOLUTION*self.NOTES_PER_BAR)
-
     def _split_dataset(self):
         """ Create the test/train set from the loaded songs
+        The dataset has been shuffled when calling this function (Warning: the shuffling
+        is done and fixed before saving the dataset the first time so it is important to
+        NOT call shuffle a second time)
         """
         split_nb = int(self.args.ratio_dataset * len(self.songs))
         self.songs_train = self.songs[:split_nb]
         self.songs_test = self.songs[split_nb:]
+        self.songs = None  # Not needed anymore (free some memory)
 
-    def get_batches(self, train_set=True):
-        """Prepare the batches for the current epoch
-        Args:
-            train_set (Bool): Indicate on which training/testing set compute the batches
+    def get_batches(self):
+        """ Prepare the batches for the current epoch
+        WARNING: The songs are not shuffled in this functions. We leave the choice
+        to the batch_builder to manage the shuffling
         Return:
-            List[Batch]: Get a list of the batches for the next epoch
+            list[Batch], list[Batch]: The batches for the training and testing set (can be generators)
         """
-        batches = []
+        return (
+            self.batch_builder.get_list(self.songs_train, name='train'),
+            self.batch_builder.get_list(self.songs_test, name='test'),
+        )
 
-        # TODO: Create batches (randomly cut each song in some small parts (need to know the total length for that)
-        # then create the big matrix (NB_NOTE*sample_length) and turn that into batch). If process too long,
-        # could save the created batches in a new folder, data/samples or save/model.
+    # def get_batches_test(self, ):  # TODO: Should only return a single batch (loading done in main class)
+    #     """ Return the batch which initiate the RNN when generating
+    #     The initial batches are loaded from a json file containing the first notes of the song. The note values
+    #     are the standard midi ones. Here is an examples of an initiator file:
+    #     Args:
+    #         TODO
+    #     Return:
+    #         Batch: The generated batch
+    #     """
+    #     assert self.args.batch_size == 1
+    #     batch = None  # TODO
+    #     return batch
 
-        # TODO: Create batches from multiples length (buckets). How to change the loss functions weights (longer
-        # sequences more penalized ?)
-
-        # TODO: Optimize memory management
-
-        # First part: Randomly extract subsamples of the songs
-        print('Subsampling songs ({})...'.format('train' if train_set else 'test'))
-
-        sample_subsampling_length = self.args.sample_length+1  # We add 1 because each input has to predict the next output
-
-        sub_songs = []
-        if train_set:
-            songs_set = self.songs_train
-        else:
-            songs_set = self.songs_test
-        for song in songs_set:
-            len_song = song.shape[-1]  # The last dimension correspond to the song duration
-            max_start = len_song - sample_subsampling_length
-            assert max_start >= 0  # TODO: Error handling (and if =0, compatible with randint ?)
-            nb_sample_song = 2*len_song // self.args.sample_length  # The number of subsample is proportional to the song length
-            for _ in range(nb_sample_song):
-                start = np.random.randint(max_start)  # TODO: Add mode to only start at the begining of a bar
-                sub_song = song[:, start:start+sample_subsampling_length]
-                sub_songs.append(sub_song)
-
-        # Second part: Shuffle the song extracts
-        print("Shuffling the dataset...")
-        np.random.shuffle(sub_songs)
-
-        # Third part: Group the samples together to create the batches
-        print("Generating batches...")
-
-        def gen_next_samples():
-            """ Generator over the mini-batch training samples
-            Warning: the last samples will be ignored if the number of batch does not match the number of samples
-            """
-            nb_samples = len(sub_songs)
-            for i in range(nb_samples//self.args.batch_size):
-                yield sub_songs[i*self.args.batch_size:(i+1)*self.args.batch_size]
-
-        for samples in gen_next_samples():  # TODO: tqdm with persist = False / will this work with generators ?
-            batch = Batch()
-
-            # samples has shape [batch_size, NB_NOTES, sample_subsampling_length]
-            assert len(samples) == self.args.batch_size
-            assert samples[0].shape == (music.NB_NOTES, sample_subsampling_length)
-
-            # Define targets and inputs
-            for i in range(self.args.sample_length):
-                input = -np.ones([len(samples), music.NB_NOTES])
-                target = np.zeros([len(samples), music.NB_NOTES])
-                for j, sample in enumerate(samples):  # len(samples) == self.args.batch_size
-                    # TODO: Could reuse boolean idx computed (from target to next input)
-                    input[j, sample[:, i] == 1] = 1.0
-                    target[j, sample[:, i+1] == 1] = 1.0
-
-                batch.inputs.append(input)
-                batch.targets.append(target)
-
-            batches.append(batch)
-
-        # Use tf.train.batch() ??
-
-        # TODO: Save some batches as midi to see if correct
-
-        return batches
-
-    def get_batches_test(self):
+    def get_batches_test_old(self):  # TODO: This is the old version. Ideally should use the version above
         """ Return the batches which initiate the RNN when generating
         The initial batches are loaded from a json file containing the first notes of the song. The note values
         are the standard midi ones. Here is an examples of an initiator file:
-
         ```
         {"initiator":[
             {"name":"Simple_C4",
@@ -347,7 +299,6 @@ class MusicData:
             ]}
         ]}
         ```
-
         Return:
             List[Batch], List[str]: The generated batches with the associated names
         """
@@ -360,13 +311,22 @@ class MusicData:
             initiators = json.load(init_file)
 
         for initiator in initiators['initiator']:
-            batch = Batch()
+            raw_song = music.Song()
+            main_track = music.Track()
 
+            current_tick = 0
             for seq in initiator['seq']:  # We add a few notes
-                new_input = -np.ones([self.args.batch_size, music.NB_NOTES])  # No notes played by default
-                for note in seq['notes']:
-                    new_input[0, note] = 1.0
-                batch.inputs.append(new_input)
+                for note_pitch in seq['notes']:
+                    new_note = music.Note()
+                    new_note.note = note_pitch
+                    new_note.tick = current_tick
+                    main_track.notes.append(new_note)
+                current_tick += 1
+
+            raw_song.tracks.append(main_track)
+            raw_song.normalize(inverse=True)
+
+            batch = self.batch_builder.process_batch(raw_song)
 
             names.append(initiator['name'])
             batches.append(batch)
@@ -397,7 +357,7 @@ class MusicData:
 
         return piano_rolls
 
-    def visit_recorder(self, outputs, base_dir, base_name, recorders):
+    def visit_recorder(self, outputs, base_dir, base_name, recorders, chosen_labels=None):
         """ Save the predicted output songs using the given recorder
         Args:
             outputs (List[np.array]): The list of the predictions of the decoder
@@ -406,21 +366,21 @@ class MusicData:
             recorders (List[Obj]): Interfaces called to convert the song into a file (ex: midi or png). The recorders
                 need to implement the method write_song (the method has to add the file extension) and the
                 method get_input_type.
+            chosen_labels (list[np.Array[batch_size, int]]): the chosen class at each timestep (useful to reconstruct the generated song)
         """
 
         if not os.path.exists(base_dir):
             os.makedirs(base_dir)
 
-        piano_rolls = MusicData._convert_to_piano_rolls(outputs)
-
-        for i, array in enumerate(piano_rolls):  # Loop over batch_size
-            base_path = os.path.join(base_dir, base_name + '-' + str(i))
-            song = self._convert_array2song(array)
+        for batch_id in range(outputs[0].shape[0]):  # Loop over batch_size
+            song = self.batch_builder.reconstruct_batch(outputs, batch_id, chosen_labels)
             for recorder in recorders:
                 if recorder.get_input_type() == 'song':
                     input = song
                 elif recorder.get_input_type() == 'array':
-                    input = array
+                    #input = self._convert_song2array(song)
+                    continue  # TODO: For now, pianoroll desactivated
                 else:
                     raise ValueError('Unknown recorder input type.'.format(recorder.get_input_type()))
+                base_path = os.path.join(base_dir, base_name + '-' + str(batch_id))
                 recorder.write_song(input, base_path)

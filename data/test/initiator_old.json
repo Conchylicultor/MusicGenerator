@@ -1,7 +1,39 @@
 {"initiator":[
+    {"name":"An_empty_song",
+     "seq":[
+        {"notes":[]}
+    ]},
+    {"name":"C4",
+     "seq":[
+        {"notes":[60]}
+    ]},
     {"name":"30_40_60",
      "seq":[
         {"notes":[30, 40, 60]}
+    ]},
+    {"name":"D4",
+     "seq":[
+        {"notes":[62]}
+    ]},
+    {"name":"E4",
+     "seq":[
+        {"notes":[64]}
+    ]},
+    {"name":"F4",
+     "seq":[
+        {"notes":[65]}
+    ]},
+    {"name":"C4_sharp",
+     "seq":[
+        {"notes":[61]}
+    ]},
+    {"name":"D4_sharp",
+     "seq":[
+        {"notes":[63]}
+    ]},
+    {"name":"G4",
+     "seq":[
+        {"notes":[67]}
     ]},
     {"name":"DoReMi",
      "seq":[
@@ -48,11 +80,6 @@
     {"name":"C_major",
      "seq":[
         {"notes":[60, 64, 67]}
-    ]},
-    {"name":"C_M_m",
-     "seq":[
-        {"notes":[60, 64, 67]},
-        {"notes":[60, 63, 67]}
     ]},
     {"name":"C_minor",
      "seq":[
