@@ -62,10 +62,18 @@ class SampleSoftmax(LoopProcessing):
         Return:
             tf.Ops: the processing operator
         """
-        # Could use the Gumbel-Max trick to sample from a softmax distribution ?
-
         # prev_output size: [batch_size, nb_labels]
         nb_labels = prev_output.get_shape().as_list()[-1]
+
+        if False:  # TODO: Add option to control argmax
+            #label_draws = tf.argmax(prev_output, 1)
+            label_draws = tf.multinomial(tf.log(prev_output), 1)  # Draw 1 sample from the distribution
+            label_draws = tf.squeeze(label_draws, [1])
+            self.chosen_labels.append(label_draws)
+            next_input = tf.one_hot(label_draws, nb_labels)
+            return next_input
+        # Could use the Gumbel-Max trick to sample from a softmax distribution ?
+
         soft_values = tf.exp(tf.div(prev_output, self.temperature))  # Pi = exp(pi/t)
         # soft_values size: [batch_size, nb_labels]
 
@@ -73,7 +81,7 @@ class SampleSoftmax(LoopProcessing):
         # normalisation_coeff size: [batch_size, 1]
         probs = tf.div(soft_values, normalisation_coeff + 1e-8)  # = Pi / sum(Pk)
         # probs size: [batch_size, nb_labels]
-        label_draws = tf.multinomial(probs, 1)  # Draw 1 sample from the distribution
+        label_draws = tf.multinomial(tf.log(probs), 1)  # Draw 1 sample from the log-probability distribution
         # probs label_draws: [batch_size, 1]
         label_draws = tf.squeeze(label_draws, [1])
         # label_draws size: [batch_size,]
