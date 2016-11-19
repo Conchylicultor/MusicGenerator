@@ -52,7 +52,7 @@ class SampleSoftmax(LoopProcessing):
 
     def __init__(self, args, *args_module):
 
-        self.temperature = 1.0  # Control the sampling (more or less concervative predictions)
+        self.temperature = args.temperature  # Control the sampling (more or less concervative predictions) (TODO: Could be a argument of modeule, but in this case will automatically be restored when --test, should also be in the save name)
         self.chosen_labels = []  # Keep track of the chosen labels (to reconstruct the chosen song)
 
     def __call__(self, prev_output):

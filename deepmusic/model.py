@@ -240,8 +240,8 @@ class Model:
                 self.targets,
                 [tf.constant(self.target_weights_policy.get_weight(i), shape=self.targets[0].get_shape()) for i in range(len(self.targets))],  # Weights
                 #softmax_loss_function=tf.nn.softmax_cross_entropy_with_logits,  # Previous: tf.nn.sigmoid_cross_entropy_with_logits TODO: Use option to choose. (new module ?)
-                average_across_timesteps=False,  # I think it's best for variables length sequences (specially with the target weights=0), isn't it (it implies also that short sequences are less penalized than long ones) ? (TODO: For variables length sequences, be careful about the target weights)
-                average_across_batch=False  # Penalize by sample (should allows dynamic batch size) Warning: need to tune the learning rate
+                average_across_timesteps=True,  # Before: I think it's best for variables length sequences (specially with the target weights=0), isn't it (it implies also that short sequences are less penalized than long ones) ? (TODO: For variables length sequences, be careful about the target weights)
+                average_across_batch=True  # Before: Penalize by sample (should allows dynamic batch size) Warning: need to tune the learning rate
             )
             tf.scalar_summary('training_loss', loss_fct)  # Keep track of the cost
 

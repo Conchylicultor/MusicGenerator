@@ -106,6 +106,7 @@ class Composer:
         global_args.add_argument('--sample_length', type=int, default=40, help='number of time units (steps) of a training sentence, length of the sequence to generate')  # Warning: the unit is defined by the MusicData.MAXIMUM_SONG_RESOLUTION parameter
         global_args.add_argument('--root_dir', type=str, default=None, help='folder where to look for the models and data')
         global_args.add_argument('--device', type=str, default=None, help='\'gpu\' or \'cpu\' (Warning: make sure you have enough free RAM), allow to choose on which hardware run the model')
+        global_args.add_argument('--temperature', type=float, default=1.0, help='Used when testing, control the ouput sampling')
 
         # Dataset options
         dataset_args = parser.add_argument_group('Dataset options')
