@@ -25,7 +25,7 @@ from deepmusic.moduleloader import ModuleLoader
 import deepmusic.songstruct as music
 
 
-class KeyboardCell(tf.nn.rnn_cell.RNNCell):
+class KeyboardCell(tf.contrib.rnn.RNNCell):
     """ Cell which wrap the encoder/decoder network
     """
 
